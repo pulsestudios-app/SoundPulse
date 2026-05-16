@@ -1,84 +1,547 @@
-import { useMemo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import Slider from "@react-native-community/slider";
+import { useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
+} from "react-native";
 
+import { Button } from "@/src/components/core/Button";
+import { Card } from "@/src/components/core/Card";
+import { Input } from "@/src/components/core/Input";
 import { Screen } from "@/src/components/core/Screen";
+import {
+  FREE_AI_GENERATIONS_PER_MONTH,
+  useGenerateEntitlementsStore,
+} from "@/src/features/generate/entitlementsStore";
+import { saveLibrarySound } from "@/src/features/soundscapes/userLibrary";
+import { useScrollContentBottomPad } from "@/src/hooks/useScrollBottomInset";
 import { useAppTheme } from "@/src/theme";
 
+type GenerateMode = "ai" | "mixer";
+
+type LayerDef = {
+  key: string;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+};
+
+const LAYER_PRESETS: LayerDef[] = [
+  { key: "rain", label: "Rain", icon: "rainy-outline" },
+  { key: "ocean", label: "Ocean", icon: "water-outline" },
+  { key: "wind", label: "Wind", icon: "cloud-outline" },
+  { key: "fire", label: "Fireplace", icon: "flame-outline" },
+  { key: "white", label: "White Noise", icon: "pulse-outline" },
+  { key: "forest", label: "Forest", icon: "leaf-outline" },
+];
+
+const EXAMPLE_PROMPTS = [
+  "Rainy cabin with distant thunder",
+  "Coffee shop with soft jazz",
+  "Ocean waves at sunset",
+  "Forest birds at dawn",
+];
+
+function sanitizeTitle(text: string, maxLen: number): string {
+  const t = text.trim();
+  if (!t) return "Generated soundscape";
+  return t.length <= maxLen ? t : `${t.slice(0, maxLen)}…`;
+}
+
 export default function GenerateScreen() {
+  const router = useRouter();
   const theme = useAppTheme();
-  const styles = useMemo(
-    () =>
-      StyleSheet.create({
-        body: {
-          flex: 1,
-          gap: theme.spacing.xl,
-        },
-        head: {
-          gap: theme.spacing.sm,
-        },
-        title: {
-          ...theme.typography.header,
-          color: theme.colors.textPrimary,
-        },
-        intro: {
-          ...theme.typography.body,
-          color: theme.colors.textSecondary,
-        },
-        mixer: {
-          flex: 1,
-          minHeight: 180,
-          backgroundColor: theme.colors.surface,
-          borderRadius: theme.radius.lg,
-          borderWidth: 1,
-          borderColor: `${theme.colors.primary}55`,
-          padding: theme.spacing.xl,
-          justifyContent: "center",
-          alignItems: "center",
-          gap: theme.spacing.sm,
-        },
-        mixerLabel: {
-          ...theme.typography.caption,
-          color: theme.colors.sky,
-          textAlign: "center",
-          textTransform: "uppercase",
-          letterSpacing: 1,
-        },
-        mixerHint: {
-          ...theme.typography.body,
-          color: theme.colors.textSecondary,
-          textAlign: "center",
-        },
-        promptPlaceholder: {
-          ...theme.typography.caption,
-          color: theme.colors.textSecondary,
-          textAlign: "center",
-          padding: theme.spacing.lg,
-          backgroundColor: theme.colors.surface,
-          borderRadius: theme.radius.md,
-          borderWidth: 1,
-          borderColor: `${theme.colors.sky}33`,
-        },
-      }),
-    [theme]
+  const scrollBottomPad = useScrollContentBottomPad(24);
+  const syncMonth = useGenerateEntitlementsStore((s) => s.syncMonth);
+  const canStartAi = useGenerateEntitlementsStore((s) => s.canStartAiGeneration);
+  const recordSuccess = useGenerateEntitlementsStore((s) => s.recordAiGenerationSuccess);
+  const isPremium = useGenerateEntitlementsStore((s) => s.isPremium);
+  const usedAi = useGenerateEntitlementsStore((s) => s.aiGenerationsUsed);
+
+  const [mode, setMode] = useState<GenerateMode>("ai");
+  const [prompt, setPrompt] = useState("");
+  const [paywallVisible, setPaywallVisible] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult] = useState<{ title: string; prompt: string } | null>(null);
+  const [aiPlaying, setAiPlaying] = useState(false);
+  const [aiSaved, setAiSaved] = useState(false);
+
+  const [layers, setLayers] = useState(() =>
+    LAYER_PRESETS.map(() => ({
+      volume: 45,
+      enabled: false,
+    }))
   );
+  const [mixPlaying, setMixPlaying] = useState(false);
+  const [mixSaved, setMixSaved] = useState(false);
+
+  const genTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    syncMonth();
+  }, [syncMonth]);
+
+  useEffect(() => {
+    return () => {
+      if (genTimer.current) clearTimeout(genTimer.current);
+    };
+  }, []);
+
+  const styles = useMemo(() => stylesForTheme(theme), [theme]);
+
+  const startAiGeneration = useCallback(() => {
+    syncMonth();
+    if (!canStartAi()) {
+      setPaywallVisible(true);
+      return;
+    }
+    const raw = prompt.trim();
+    if (!raw) return;
+
+    setAiLoading(true);
+    setAiResult(null);
+    setAiPlaying(false);
+    setAiSaved(false);
+
+    genTimer.current = setTimeout(() => {
+      genTimer.current = null;
+      setAiLoading(false);
+      recordSuccess();
+      setAiResult({ title: sanitizeTitle(raw, 48), prompt: raw });
+    }, 2300);
+  }, [prompt, syncMonth, canStartAi, recordSuccess]);
+
+  const toggleAiPlay = useCallback(() => {
+    setAiPlaying((p) => !p);
+  }, []);
+
+  const saveAiResult = useCallback(async () => {
+    if (!aiResult) return;
+    await saveLibrarySound({
+      kind: "ai",
+      title: aiResult.title,
+      subtitle: "AI Generate",
+      payload: aiResult.prompt,
+    }).catch(console.error);
+    setAiSaved(true);
+  }, [aiResult]);
+
+  const toggleMixerPlay = useCallback(() => setMixPlaying((p) => !p), []);
+
+  const saveMixer = useCallback(async () => {
+    const snapshot = JSON.stringify(
+      LAYER_PRESETS.map((d, i) => ({
+        id: d.key,
+        volume: layers[i]?.volume ?? 0,
+        enabled: layers[i]?.enabled ?? false,
+      }))
+    );
+    await saveLibrarySound({
+      kind: "mix",
+      title: "Layer mix",
+      subtitle: "Mixer",
+      payload: snapshot,
+    }).catch(console.error);
+    setMixSaved(true);
+  }, [layers]);
+
+  const quotaLabelFree = `${usedAi}/${FREE_AI_GENERATIONS_PER_MONTH} AI generations this month`;
 
   return (
     <Screen>
-      <View style={styles.body}>
-        <View style={styles.head}>
-          <Text style={styles.title}>Generate</Text>
-          <Text style={styles.intro}>Describe an ambience — then blend stems with the layer mixer.</Text>
+      <ScrollView
+        contentContainerStyle={[styles.scroll, { paddingBottom: scrollBottomPad }]}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.pageTitle}>Generate</Text>
+
+        <View style={styles.modeRow}>
+          <Pressable
+            onPress={() => setMode("ai")}
+            style={[styles.modePill, mode === "ai" && styles.modePillActive]}
+            android_ripple={{ color: `${theme.colors.sky}44` }}
+          >
+            <Text style={[styles.modeText, mode === "ai" && styles.modeTextActive]}>AI Generate</Text>
+            <View style={styles.proBadge}>
+              <Text style={styles.proBadgeText}>PRO</Text>
+            </View>
+          </Pressable>
+          <Pressable
+            onPress={() => setMode("mixer")}
+            style={[styles.modePill, mode === "mixer" && styles.modePillActive]}
+            android_ripple={{ color: `${theme.colors.sky}44` }}
+          >
+            <Text style={[styles.modeText, mode === "mixer" && styles.modeTextActive]}>Layer Mixer</Text>
+          </Pressable>
         </View>
 
-        <Text style={styles.promptPlaceholder}>
-          AI prompt … (e.g. “gentle rain on a tent + distant thunder, lo-fi hiss”)
-        </Text>
+        {!isPremium ? <Text style={styles.quotaHint}>{quotaLabelFree}</Text> : null}
 
-        <View style={styles.mixer}>
-          <Text style={styles.mixerLabel}>Layer mixer</Text>
-          <Text style={styles.mixerHint}>Volume faders · mute/solo · per-layer FX — UI shell only for now.</Text>
+        {mode === "ai" ? (
+          <>
+            <Text style={styles.sectionLabel}>Prompt</Text>
+            <Input
+              placeholder='Describe your perfect sound…'
+              placeholderTextColor={theme.colors.textSecondary}
+              value={prompt}
+              onChangeText={setPrompt}
+              multiline
+              numberOfLines={4}
+              style={styles.promptInput}
+            />
+
+            <Text style={styles.examplesLabel}>Ideas</Text>
+            <View style={styles.chipWrap}>
+              {EXAMPLE_PROMPTS.map((line) => (
+                <Pressable
+                  key={line}
+                  onPress={() => setPrompt(line)}
+                  style={styles.chip}
+                  android_ripple={{ color: `${theme.colors.primary}33` }}
+                >
+                  <Text style={styles.chipText}>{line}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <View style={{ position: "relative" }}>
+              <Button
+                label="Generate"
+                onPress={startAiGeneration}
+                disabled={aiLoading || !prompt.trim()}
+                style={{ alignSelf: "stretch" }}
+                premiumGlow
+              />
+              {aiLoading ? (
+                <View style={styles.loadingCard}>
+                  <ActivityIndicator color={theme.colors.sky} size="large" />
+                  <Text style={styles.loadingCaption}>Generating your soundscape…</Text>
+                </View>
+              ) : null}
+            </View>
+
+            {aiResult ? (
+              <Card>
+                <Text style={styles.resultLabel}>Ready</Text>
+                <Text style={styles.resultTitle}>{aiResult.title}</Text>
+                <View style={styles.resultActions}>
+                  <Pressable style={styles.iconBtn} onPress={toggleAiPlay} accessibilityRole="button">
+                    <Ionicons name={aiPlaying ? "pause-circle" : "play-circle"} size={44} color={theme.colors.primary} />
+                  </Pressable>
+                  <Text style={styles.playHint}>{aiPlaying ? "Playing preview (mock)" : "Tap to preview"}</Text>
+                </View>
+                <Button
+                  variant="secondary"
+                  label={aiSaved ? "Saved to Library" : "Save to Library"}
+                  onPress={saveAiResult}
+                  disabled={aiSaved}
+                />
+              </Card>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <Card>
+              <Text style={styles.sectionTitle}>Layers</Text>
+              {LAYER_PRESETS.map((layer, idx) => {
+                const row = layers[idx];
+                const vol = row?.volume ?? 0;
+                const on = row?.enabled ?? false;
+                const isLastLayer = idx === LAYER_PRESETS.length - 1;
+                return (
+                  <View
+                    key={layer.key}
+                    style={[styles.layerRow, isLastLayer && { borderBottomWidth: 0, paddingBottom: 0 }]}
+                  >
+                    <View style={styles.layerHead}>
+                      <Ionicons name={layer.icon} size={22} color={theme.colors.sky} />
+                      <Text style={styles.layerLabel}>{layer.label}</Text>
+                      <Switch
+                        value={on}
+                        onValueChange={(v) =>
+                          setLayers((prev) => {
+                            const next = [...prev];
+                            next[idx] = { ...next[idx], enabled: v } as {
+                              volume: number;
+                              enabled: boolean;
+                            };
+                            return next;
+                          })
+                        }
+                        thumbColor={on ? theme.colors.primary : "#666"}
+                        trackColor={{
+                          false: theme.colors.border,
+                          true: `${theme.colors.primary}88`,
+                        }}
+                      />
+                    </View>
+                    <Slider
+                      style={{ width: "100%", height: 40 }}
+                      minimumValue={0}
+                      maximumValue={100}
+                      step={1}
+                      value={vol}
+                      disabled={!on}
+                      minimumTrackTintColor={theme.colors.primary}
+                      maximumTrackTintColor={theme.colors.border}
+                      thumbTintColor={theme.colors.sky}
+                      onValueChange={(value) => {
+                        if (!on) {
+                          return;
+                        }
+                        setLayers((prev) => {
+                          const next = [...prev];
+                          next[idx] = { ...next[idx]!, volume: Math.round(value) };
+                          return next;
+                        });
+                      }}
+                    />
+                    <Text style={styles.sliderValue}>{on ? `${Math.round(vol)}%` : "—"}</Text>
+                  </View>
+                );
+              })}
+            </Card>
+
+            <View style={styles.mixerBtns}>
+              <Button label={mixPlaying ? "Stop" : "Play"} variant="secondary" onPress={() => toggleMixerPlay()} />
+              <Button label="Save Mix" premiumGlow disabled={mixSaved} onPress={saveMixer} />
+              {mixPlaying ? (
+                <Text style={styles.mixPlayingHint}>Preview mix · audio engine coming soon.</Text>
+              ) : null}
+            </View>
+          </>
+        )}
+      </ScrollView>
+
+      <Modal visible={paywallVisible} transparent animationType="fade">
+        <View style={styles.paywallBackdrop}>
+          <Pressable style={styles.paywallBackdropFill} onPress={() => setPaywallVisible(false)} />
+          <View style={styles.paywallCard}>
+            <Text style={styles.paywallTitle}>Monthly limit reached</Text>
+            <Text style={styles.paywallBody}>
+              Free accounts get {FREE_AI_GENERATIONS_PER_MONTH} AI generations each month. Upgrade for unlimited ambient
+              creation.
+            </Text>
+            <Button
+              label="View plans · Profile"
+              onPress={() => {
+                setPaywallVisible(false);
+                router.push("/profile");
+              }}
+              style={{ alignSelf: "stretch" }}
+            />
+            <Button variant="secondary" label="Maybe later" onPress={() => setPaywallVisible(false)} />
+          </View>
         </View>
-      </View>
+      </Modal>
     </Screen>
   );
+}
+
+function stylesForTheme(theme: ReturnType<typeof useAppTheme>) {
+  return StyleSheet.create({
+    scroll: { gap: theme.spacing.md, flexGrow: 1 },
+    pageTitle: {
+      ...theme.typography.header,
+      color: theme.colors.textPrimary,
+    },
+    modeRow: {
+      flexDirection: "row",
+      gap: theme.spacing.sm,
+      backgroundColor: theme.colors.surface,
+      padding: theme.spacing.sm,
+      borderRadius: theme.radius.lg,
+      borderWidth: 1,
+      borderColor: `${theme.colors.primary}44`,
+      alignSelf: "stretch",
+    },
+    modePill: {
+      flex: 1,
+      paddingVertical: 10,
+      borderRadius: theme.radius.md,
+      alignItems: "center",
+      justifyContent: "center",
+      flexDirection: "row",
+      gap: 6,
+    },
+    modePillActive: {
+      backgroundColor: `${theme.colors.primary}37`,
+      borderWidth: 1,
+      borderColor: theme.colors.sky,
+    },
+    modeText: {
+      ...theme.typography.body,
+      color: theme.colors.textSecondary,
+      fontWeight: "700",
+      fontSize: 14,
+    },
+    modeTextActive: {
+      color: theme.colors.textPrimary,
+    },
+    proBadge: {
+      backgroundColor: `${theme.colors.sky}2a`,
+      borderWidth: 1,
+      borderColor: `${theme.colors.sky}99`,
+      borderRadius: 6,
+      paddingHorizontal: 6,
+      paddingVertical: 1,
+    },
+    proBadgeText: {
+      fontSize: 10,
+      fontWeight: "800",
+      color: theme.colors.sky,
+      letterSpacing: 0.5,
+    },
+    quotaHint: {
+      ...theme.typography.caption,
+      color: theme.colors.textSecondary,
+      textAlign: "center",
+    },
+    sectionLabel: {
+      ...theme.typography.caption,
+      color: theme.colors.sky,
+      textTransform: "uppercase",
+      letterSpacing: 0.9,
+      fontWeight: "700",
+    },
+    promptInput: {
+      minHeight: 120,
+      textAlignVertical: "top",
+      paddingTop: 12,
+    },
+    examplesLabel: {
+      ...theme.typography.caption,
+      color: theme.colors.textSecondary,
+      fontWeight: "600",
+      marginTop: theme.spacing.sm,
+    },
+    chipWrap: { gap: theme.spacing.sm, flexDirection: "column" },
+    chip: {
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      borderRadius: theme.radius.md,
+      borderWidth: 1,
+      borderColor: `${theme.colors.sky}44`,
+      backgroundColor: `${theme.colors.background}aa`,
+      alignSelf: "stretch",
+    },
+    chipText: {
+      ...theme.typography.body,
+      fontSize: 14,
+      color: theme.colors.textSecondary,
+    },
+    loadingCard: {
+      marginTop: theme.spacing.md,
+      paddingVertical: theme.spacing.xl,
+      paddingHorizontal: theme.spacing.lg,
+      borderRadius: theme.radius.md,
+      backgroundColor: theme.colors.surface,
+      borderWidth: 1,
+      borderColor: theme.colors.primary,
+      alignItems: "center",
+      gap: theme.spacing.sm,
+    },
+    loadingCaption: {
+      ...theme.typography.caption,
+      color: theme.colors.textSecondary,
+    },
+    resultLabel: {
+      ...theme.typography.caption,
+      color: theme.colors.sky,
+      textTransform: "uppercase",
+      letterSpacing: 1,
+    },
+    resultTitle: {
+      ...theme.typography.title,
+      fontSize: 20,
+      color: theme.colors.textPrimary,
+      marginBottom: theme.spacing.md,
+    },
+    resultActions: {
+      alignItems: "center",
+      marginBottom: theme.spacing.md,
+    },
+    iconBtn: { padding: 8 },
+    playHint: {
+      ...theme.typography.caption,
+      color: theme.colors.textSecondary,
+      marginTop: 4,
+    },
+    sectionTitle: {
+      ...theme.typography.title,
+      marginBottom: theme.spacing.md,
+      color: theme.colors.primary,
+    },
+    layerRow: {
+      paddingVertical: theme.spacing.md,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border,
+      gap: 4,
+    },
+    layerHead: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.sm,
+    },
+    layerLabel: {
+      ...theme.typography.body,
+      color: theme.colors.textPrimary,
+      fontWeight: "700",
+      flex: 1,
+    },
+    sliderValue: {
+      ...theme.typography.caption,
+      color: theme.colors.textSecondary,
+      textAlign: "right",
+      marginBottom: theme.spacing.sm,
+    },
+    mixerBtns: { gap: theme.spacing.sm, marginTop: theme.spacing.sm },
+    mixPlayingHint: {
+      ...theme.typography.caption,
+      color: theme.colors.sky,
+      textAlign: "center",
+    },
+    paywallBackdrop: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+      padding: theme.spacing.lg,
+    },
+    paywallBackdropFill: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: "rgba(10,10,15,0.88)",
+    },
+    paywallCard: {
+      width: "100%",
+      borderRadius: theme.radius.lg,
+      padding: theme.spacing.xl,
+      gap: theme.spacing.md,
+      backgroundColor: theme.colors.surface,
+      borderWidth: 1,
+      borderColor: theme.colors.sky,
+      maxWidth: 400,
+      alignSelf: "center",
+      zIndex: 1,
+    },
+    paywallTitle: {
+      ...theme.typography.title,
+      fontSize: 22,
+      color: theme.colors.textPrimary,
+      textAlign: "center",
+    },
+    paywallBody: {
+      ...theme.typography.body,
+      color: theme.colors.textSecondary,
+      textAlign: "center",
+      lineHeight: 22,
+      marginBottom: theme.spacing.sm,
+    },
+  });
 }
