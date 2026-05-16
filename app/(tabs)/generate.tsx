@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -17,6 +17,7 @@ import { Button } from "@/src/components/core/Button";
 import { Card } from "@/src/components/core/Card";
 import { Input } from "@/src/components/core/Input";
 import { Screen } from "@/src/components/core/Screen";
+import { layerMixerEngine } from "@/src/features/audio/layerMixerEngine";
 import {
   FREE_AI_GENERATIONS_PER_MONTH,
   useGenerateEntitlementsStore,
@@ -80,9 +81,12 @@ export default function GenerateScreen() {
     }))
   );
   const [mixPlaying, setMixPlaying] = useState(false);
+  const [mixLoading, setMixLoading] = useState(false);
   const [mixSaved, setMixSaved] = useState(false);
 
   const genTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const layersRef = useRef(layers);
+  layersRef.current = layers;
 
   useEffect(() => {
     syncMonth();
@@ -91,8 +95,31 @@ export default function GenerateScreen() {
   useEffect(() => {
     return () => {
       if (genTimer.current) clearTimeout(genTimer.current);
+      void layerMixerEngine.stopMix();
     };
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        void layerMixerEngine.stopMix();
+        setMixPlaying(false);
+        setMixLoading(false);
+      };
+    }, [])
+  );
+
+  const layerStatesForEngine = useCallback(
+    () =>
+      LAYER_PRESETS.map((preset, i) => ({
+        key: preset.key,
+        volume: layersRef.current[i]?.volume ?? 0,
+        enabled: layersRef.current[i]?.enabled ?? false,
+      })),
+    []
+  );
+
+  const hasEnabledLayer = layers.some((l) => l.enabled);
 
   const styles = useMemo(() => stylesForTheme(theme), [theme]);
 
@@ -133,7 +160,56 @@ export default function GenerateScreen() {
     setAiSaved(true);
   }, [aiResult]);
 
-  const toggleMixerPlay = useCallback(() => setMixPlaying((p) => !p), []);
+  const toggleMixerPlay = useCallback(async () => {
+    if (layerMixerEngine.isPlaying() || mixPlaying) {
+      await layerMixerEngine.stopMix();
+      setMixPlaying(false);
+      setMixLoading(false);
+      return;
+    }
+    if (!hasEnabledLayer) {
+      return;
+    }
+    setMixLoading(true);
+    try {
+      await layerMixerEngine.playMix(layerStatesForEngine());
+      setMixPlaying(layerMixerEngine.isPlaying());
+    } catch (e) {
+      console.error("[Generate] Mixer play failed:", e);
+      setMixPlaying(false);
+    } finally {
+      setMixLoading(false);
+    }
+  }, [hasEnabledLayer, layerStatesForEngine, mixPlaying]);
+
+  const onLayerEnabledChange = useCallback((idx: number, enabled: boolean) => {
+    setLayers((prev) => {
+      const next = [...prev];
+      const row = { ...next[idx]!, enabled };
+      next[idx] = row;
+      const preset = LAYER_PRESETS[idx];
+      if (preset) {
+        void layerMixerEngine.applyLayerChange({
+          key: preset.key,
+          volume: row.volume,
+          enabled: row.enabled,
+        });
+      }
+      return next;
+    });
+  }, []);
+
+  const onLayerVolumeChange = useCallback((idx: number, volume: number) => {
+    const rounded = Math.round(volume);
+    setLayers((prev) => {
+      const next = [...prev];
+      next[idx] = { ...next[idx]!, volume: rounded };
+      return next;
+    });
+    const preset = LAYER_PRESETS[idx];
+    if (!preset || !layersRef.current[idx]?.enabled) return;
+    void layerMixerEngine.setLayerVolume(preset.key, rounded);
+  }, []);
 
   const saveMixer = useCallback(async () => {
     const snapshot = JSON.stringify(
@@ -265,16 +341,7 @@ export default function GenerateScreen() {
                       <Text style={styles.layerLabel}>{layer.label}</Text>
                       <Switch
                         value={on}
-                        onValueChange={(v) =>
-                          setLayers((prev) => {
-                            const next = [...prev];
-                            next[idx] = { ...next[idx], enabled: v } as {
-                              volume: number;
-                              enabled: boolean;
-                            };
-                            return next;
-                          })
-                        }
+                        onValueChange={(v) => onLayerEnabledChange(idx, v)}
                         thumbColor={on ? theme.colors.primary : "#666"}
                         trackColor={{
                           false: theme.colors.border,
@@ -296,11 +363,7 @@ export default function GenerateScreen() {
                         if (!on) {
                           return;
                         }
-                        setLayers((prev) => {
-                          const next = [...prev];
-                          next[idx] = { ...next[idx]!, volume: Math.round(value) };
-                          return next;
-                        });
+                        onLayerVolumeChange(idx, value);
                       }}
                     />
                     <Text style={styles.sliderValue}>{on ? `${Math.round(vol)}%` : "—"}</Text>
@@ -310,10 +373,17 @@ export default function GenerateScreen() {
             </Card>
 
             <View style={styles.mixerBtns}>
-              <Button label={mixPlaying ? "Stop" : "Play"} variant="secondary" onPress={() => toggleMixerPlay()} />
+              <Button
+                label={mixLoading ? "Loading…" : mixPlaying ? "Stop" : "Play"}
+                variant="secondary"
+                disabled={mixLoading || (!mixPlaying && !hasEnabledLayer)}
+                onPress={() => void toggleMixerPlay()}
+              />
               <Button label="Save Mix" premiumGlow disabled={mixSaved} onPress={saveMixer} />
               {mixPlaying ? (
-                <Text style={styles.mixPlayingHint}>Preview mix · audio engine coming soon.</Text>
+                <Text style={styles.mixPlayingHint}>Mix playing · layers loop in the background.</Text>
+              ) : !hasEnabledLayer ? (
+                <Text style={styles.mixPlayingHint}>Enable at least one layer to play.</Text>
               ) : null}
             </View>
           </>
