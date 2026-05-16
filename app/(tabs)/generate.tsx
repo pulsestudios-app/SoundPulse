@@ -17,11 +17,14 @@ import { Button } from "@/src/components/core/Button";
 import { Card } from "@/src/components/core/Card";
 import { Input } from "@/src/components/core/Input";
 import { Screen } from "@/src/components/core/Screen";
+import { aiPreviewPlayer, formatAudioDuration } from "@/src/features/audio/aiPreviewPlayer";
 import { layerMixerEngine } from "@/src/features/audio/layerMixerEngine";
+import { useAuthSession } from "@/src/features/auth/useAuthSession";
 import {
   FREE_AI_GENERATIONS_PER_MONTH,
   useGenerateEntitlementsStore,
 } from "@/src/features/generate/entitlementsStore";
+import { generateSoundscape, GenerateSoundscapeError } from "@/src/features/soundscapes/generateApi";
 import { saveLibrarySound } from "@/src/features/soundscapes/userLibrary";
 import { useScrollContentBottomPad } from "@/src/hooks/useScrollBottomInset";
 import { useAppTheme } from "@/src/theme";
@@ -56,10 +59,18 @@ function sanitizeTitle(text: string, maxLen: number): string {
   return t.length <= maxLen ? t : `${t.slice(0, maxLen)}…`;
 }
 
+type AiGenerationResult = {
+  title: string;
+  prompt: string;
+  url: string;
+  duration: number;
+};
+
 export default function GenerateScreen() {
   const router = useRouter();
   const theme = useAppTheme();
   const scrollBottomPad = useScrollContentBottomPad(24);
+  const { session } = useAuthSession();
   const syncMonth = useGenerateEntitlementsStore((s) => s.syncMonth);
   const canStartAi = useGenerateEntitlementsStore((s) => s.canStartAiGeneration);
   const recordSuccess = useGenerateEntitlementsStore((s) => s.recordAiGenerationSuccess);
@@ -70,9 +81,10 @@ export default function GenerateScreen() {
   const [prompt, setPrompt] = useState("");
   const [paywallVisible, setPaywallVisible] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
-  const [aiResult, setAiResult] = useState<{ title: string; prompt: string } | null>(null);
+  const [aiResult, setAiResult] = useState<AiGenerationResult | null>(null);
   const [aiPlaying, setAiPlaying] = useState(false);
   const [aiSaved, setAiSaved] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const [layers, setLayers] = useState(() =>
     LAYER_PRESETS.map(() => ({
@@ -84,7 +96,6 @@ export default function GenerateScreen() {
   const [mixLoading, setMixLoading] = useState(false);
   const [mixSaved, setMixSaved] = useState(false);
 
-  const genTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const layersRef = useRef(layers);
   layersRef.current = layers;
 
@@ -94,8 +105,8 @@ export default function GenerateScreen() {
 
   useEffect(() => {
     return () => {
-      if (genTimer.current) clearTimeout(genTimer.current);
       void layerMixerEngine.stopMix();
+      void aiPreviewPlayer.unload();
     };
   }, []);
 
@@ -103,8 +114,10 @@ export default function GenerateScreen() {
     useCallback(() => {
       return () => {
         void layerMixerEngine.stopMix();
+        void aiPreviewPlayer.unload();
         setMixPlaying(false);
         setMixLoading(false);
+        setAiPlaying(false);
       };
     }, [])
   );
@@ -123,7 +136,7 @@ export default function GenerateScreen() {
 
   const styles = useMemo(() => stylesForTheme(theme), [theme]);
 
-  const startAiGeneration = useCallback(() => {
+  const startAiGeneration = useCallback(async () => {
     syncMonth();
     if (!canStartAi()) {
       setPaywallVisible(true);
@@ -132,22 +145,49 @@ export default function GenerateScreen() {
     const raw = prompt.trim();
     if (!raw) return;
 
+    const userId = session?.user?.id;
+    if (!userId) {
+      setAiError("Sign in to generate AI soundscapes.");
+      return;
+    }
+
     setAiLoading(true);
+    setAiError(null);
     setAiResult(null);
     setAiPlaying(false);
     setAiSaved(false);
+    await aiPreviewPlayer.unload();
 
-    genTimer.current = setTimeout(() => {
-      genTimer.current = null;
-      setAiLoading(false);
+    try {
+      const { url, duration } = await generateSoundscape(raw, userId);
       recordSuccess();
-      setAiResult({ title: sanitizeTitle(raw, 48), prompt: raw });
-    }, 2300);
-  }, [prompt, syncMonth, canStartAi, recordSuccess]);
+      const loadedDuration = await aiPreviewPlayer.load(url);
+      const resolvedDuration =
+        loadedDuration > 0 ? loadedDuration : duration > 0 ? duration : 15;
+      setAiResult({
+        title: sanitizeTitle(raw, 48),
+        prompt: raw,
+        url,
+        duration: resolvedDuration,
+      });
+    } catch (e) {
+      const message =
+        e instanceof GenerateSoundscapeError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : "Generation failed";
+      setAiError(message);
+    } finally {
+      setAiLoading(false);
+    }
+  }, [prompt, session?.user?.id, syncMonth, canStartAi, recordSuccess]);
 
-  const toggleAiPlay = useCallback(() => {
-    setAiPlaying((p) => !p);
-  }, []);
+  const toggleAiPlay = useCallback(async () => {
+    if (!aiResult?.url) return;
+    const playing = await aiPreviewPlayer.toggle(aiResult.url);
+    setAiPlaying(playing);
+  }, [aiResult?.url]);
 
   const saveAiResult = useCallback(async () => {
     if (!aiResult) return;
@@ -155,7 +195,11 @@ export default function GenerateScreen() {
       kind: "ai",
       title: aiResult.title,
       subtitle: "AI Generate",
-      payload: aiResult.prompt,
+      payload: JSON.stringify({
+        prompt: aiResult.prompt,
+        url: aiResult.url,
+        duration: aiResult.duration,
+      }),
     }).catch(console.error);
     setAiSaved(true);
   }, [aiResult]);
@@ -288,9 +332,11 @@ export default function GenerateScreen() {
             </View>
 
             <View style={{ position: "relative" }}>
+              {aiError ? <Text style={styles.aiError}>{aiError}</Text> : null}
+
               <Button
                 label="Generate"
-                onPress={startAiGeneration}
+                onPress={() => void startAiGeneration()}
                 disabled={aiLoading || !prompt.trim()}
                 style={{ alignSelf: "stretch" }}
                 premiumGlow
@@ -307,16 +353,26 @@ export default function GenerateScreen() {
               <Card>
                 <Text style={styles.resultLabel}>Ready</Text>
                 <Text style={styles.resultTitle}>{aiResult.title}</Text>
+                <Text style={styles.durationBadge}>
+                  {formatAudioDuration(aiResult.duration)} · loops
+                </Text>
                 <View style={styles.resultActions}>
-                  <Pressable style={styles.iconBtn} onPress={toggleAiPlay} accessibilityRole="button">
+                  <Pressable
+                    style={styles.iconBtn}
+                    onPress={() => void toggleAiPlay()}
+                    accessibilityRole="button"
+                    accessibilityLabel={aiPlaying ? "Pause generated sound" : "Play generated sound"}
+                  >
                     <Ionicons name={aiPlaying ? "pause-circle" : "play-circle"} size={44} color={theme.colors.primary} />
                   </Pressable>
-                  <Text style={styles.playHint}>{aiPlaying ? "Playing preview (mock)" : "Tap to preview"}</Text>
+                  <Text style={styles.playHint}>
+                    {aiPlaying ? "Playing · looped preview" : "Tap to play · looped preview"}
+                  </Text>
                 </View>
                 <Button
                   variant="secondary"
                   label={aiSaved ? "Saved to Library" : "Save to Library"}
-                  onPress={saveAiResult}
+                  onPress={() => void saveAiResult()}
                   disabled={aiSaved}
                 />
               </Card>
@@ -522,6 +578,11 @@ function stylesForTheme(theme: ReturnType<typeof useAppTheme>) {
       ...theme.typography.caption,
       color: theme.colors.textSecondary,
     },
+    aiError: {
+      ...theme.typography.caption,
+      color: theme.colors.coral,
+      marginBottom: theme.spacing.sm,
+    },
     resultLabel: {
       ...theme.typography.caption,
       color: theme.colors.sky,
@@ -532,7 +593,13 @@ function stylesForTheme(theme: ReturnType<typeof useAppTheme>) {
       ...theme.typography.title,
       fontSize: 20,
       color: theme.colors.textPrimary,
+      marginBottom: theme.spacing.xs,
+    },
+    durationBadge: {
+      ...theme.typography.caption,
+      color: theme.colors.sky,
       marginBottom: theme.spacing.md,
+      fontWeight: "600",
     },
     resultActions: {
       alignItems: "center",
