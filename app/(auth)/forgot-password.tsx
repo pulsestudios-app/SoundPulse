@@ -2,17 +2,17 @@ import { Link } from "expo-router";
 import { useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
-import { signInWithEmail } from "@/src/features/auth/api";
 import { Button } from "@/src/components/core/Button";
 import { Input } from "@/src/components/core/Input";
 import { Screen } from "@/src/components/core/Screen";
+import { sendPasswordResetEmail } from "@/src/features/auth/api";
 import { useAppTheme } from "@/src/theme";
 
-export default function SignInScreen() {
+export default function ForgotPasswordScreen() {
   const theme = useAppTheme();
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const styles = useMemo(
@@ -31,55 +31,56 @@ export default function SignInScreen() {
           ...theme.typography.body,
           color: theme.colors.textSecondary,
           marginTop: -theme.spacing.sm,
+          lineHeight: 22,
         },
         error: {
           ...theme.typography.caption,
           color: theme.colors.coral,
+        },
+        success: {
+          ...theme.typography.caption,
+          color: theme.colors.lime,
         },
         link: {
           ...theme.typography.body,
           color: theme.colors.sky,
           textAlign: "center",
         },
-        forgotLink: {
-          ...theme.typography.caption,
-          color: theme.colors.sky,
-          alignSelf: "flex-start",
-        },
       }),
     [theme]
   );
 
-  const handleSignIn = async () => {
+  const handleSendReset = async () => {
     setErrorMessage(null);
+    setSuccessMessage(null);
 
-    if (!email || !password) {
-      setErrorMessage("Please enter both email and password.");
+    if (!email.trim()) {
+      setErrorMessage("Please enter your email.");
       return;
     }
 
     setIsSubmitting(true);
-    const { error } = await signInWithEmail(email.trim(), password);
+    const { error } = await sendPasswordResetEmail(email.trim());
     setIsSubmitting(false);
 
     if (error) {
-      const raw = error.message ?? "";
-      const lower = raw.toLowerCase();
-      if (lower.includes("email not confirmed") || lower.includes("not confirmed")) {
-        setErrorMessage(
-          "Confirm your email before signing in. Check your inbox or use Sign up to resend the link."
-        );
-      } else {
-        setErrorMessage(raw);
+      const msg = error.message.toLowerCase();
+      if (msg.includes("user not found") || msg.includes("email not found") || msg.includes("invalid")) {
+        setErrorMessage("No account found for this email.");
+        return;
       }
+      setErrorMessage(error.message);
+      return;
     }
+
+    setSuccessMessage("Check your email for a reset link");
   };
 
   return (
     <Screen>
       <View style={styles.container}>
-        <Text style={styles.header}>Welcome Back</Text>
-        <Text style={styles.subtitle}>Sign in to continue with SoundPulse.</Text>
+        <Text style={styles.header}>Reset password</Text>
+        <Text style={styles.subtitle}>Enter your email and we will send you a link to choose a new password.</Text>
 
         <Input
           autoCapitalize="none"
@@ -89,29 +90,18 @@ export default function SignInScreen() {
           value={email}
           onChangeText={setEmail}
         />
-        <Input
-          autoCapitalize="none"
-          autoComplete="password"
-          placeholder="Password"
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-        />
-
-        <Link href="/forgot-password" style={styles.forgotLink}>
-          Forgot password?
-        </Link>
 
         {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
+        {successMessage ? <Text style={styles.success}>{successMessage}</Text> : null}
 
         {isSubmitting ? (
           <ActivityIndicator color={theme.colors.sky} />
         ) : (
-          <Button label="Sign In" onPress={handleSignIn} />
+          <Button label="Send Reset Link" onPress={handleSendReset} />
         )}
 
-        <Link href="/sign-up" style={styles.link}>
-          Create an account
+        <Link href="/sign-in" style={styles.link}>
+          Back to Sign In
         </Link>
       </View>
     </Screen>

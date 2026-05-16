@@ -1,7 +1,2 @@
-export const colors = {
-  primary: '#7C3AED',
-  secondary: '#06B6D4',
-  background: '#0A0A0F',
-  surface: '#12121A',
-  text: '#FFFFFF',
-} as const;
+/** @deprecated Import palettes or use useAppTheme() for dynamic colors. */
+export { colorsDark as colors } from "./palettes";

@@ -1,0 +1,140 @@
+import express, { type Request, type Response } from "express";
+
+import { authenticateUser } from "../middleware/authenticateUser.js";
+import {
+  PlayBillingConfigError,
+  PlayPurchaseVerificationError,
+  verifyAndGrantPlayPurchase,
+} from "../services/playBilling.js";
+import { isKnownPlayProductId, playProductIdToTier } from "../services/playProducts.js";
+import type { PlanTier } from "../services/planTier.js";
+
+export const billingRouter = express.Router();
+
+type VerifyBody = {
+  productId?: unknown;
+  purchaseToken?: unknown;
+};
+
+type RestorePurchaseInput = {
+  productId?: unknown;
+  purchaseToken?: unknown;
+};
+
+const TIER_RANK: Record<PlanTier, number> = {
+  free: 0,
+  pro_weekly: 1,
+  student: 2,
+  semester: 3,
+  pro: 4,
+  yearly: 5,
+  unlimited: 6,
+  lifetime: 7,
+};
+
+function parseVerifyBody(body: VerifyBody): { productId: string; purchaseToken: string } | null {
+  const productId = typeof body.productId === "string" ? body.productId.trim() : "";
+  const purchaseToken = typeof body.purchaseToken === "string" ? body.purchaseToken.trim() : "";
+  if (!productId || !purchaseToken) {
+    return null;
+  }
+  return { productId, purchaseToken };
+}
+
+function sendBillingError(res: Response, status: number, code: string, message: string, extra?: Record<string, unknown>) {
+  res.status(status).json({ error: { code, message }, ...extra });
+}
+
+billingRouter.post("/play/verify", authenticateUser, async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) {
+    sendBillingError(res, 401, "UNAUTHORIZED", "Unauthorized");
+    return;
+  }
+
+  const parsed = parseVerifyBody(req.body as VerifyBody);
+  if (!parsed) {
+    sendBillingError(res, 400, "INVALID_REQUEST", "productId and purchaseToken are required.");
+    return;
+  }
+
+  if (!isKnownPlayProductId(parsed.productId)) {
+    sendBillingError(res, 400, "UNKNOWN_PRODUCT", `Unknown product ID: ${parsed.productId}`);
+    return;
+  }
+
+  try {
+    const tier = await verifyAndGrantPlayPurchase(userId, parsed.productId, parsed.purchaseToken);
+    res.json({ ok: true, tier, productId: parsed.productId });
+  } catch (err) {
+    if (err instanceof PlayBillingConfigError) {
+      sendBillingError(res, 500, "CONFIG_ERROR", err.message);
+      return;
+    }
+    if (err instanceof PlayPurchaseVerificationError) {
+      sendBillingError(res, 422, "VERIFICATION_FAILED", err.message, { refunded: err.refunded });
+      return;
+    }
+    console.error("[billing] verify error:", err);
+    sendBillingError(res, 500, "INTERNAL_ERROR", "Could not verify purchase.");
+  }
+});
+
+billingRouter.post("/play/restore", authenticateUser, async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) {
+    sendBillingError(res, 401, "UNAUTHORIZED", "Unauthorized");
+    return;
+  }
+
+  const raw = (req.body as { purchases?: unknown })?.purchases;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    sendBillingError(res, 400, "INVALID_REQUEST", "purchases array is required.");
+    return;
+  }
+
+  const inputs: { productId: string; purchaseToken: string }[] = [];
+  for (const item of raw as RestorePurchaseInput[]) {
+    const productId = typeof item.productId === "string" ? item.productId.trim() : "";
+    const purchaseToken = typeof item.purchaseToken === "string" ? item.purchaseToken.trim() : "";
+    if (productId && purchaseToken && isKnownPlayProductId(productId)) {
+      inputs.push({ productId, purchaseToken });
+    }
+  }
+
+  if (inputs.length === 0) {
+    res.json({ ok: true, tier: null, restored: false });
+    return;
+  }
+
+  let bestTier: PlanTier | null = null;
+  let bestRank = -1;
+  const failures: string[] = [];
+
+  for (const purchase of inputs) {
+    try {
+      const tier = await verifyAndGrantPlayPurchase(userId, purchase.productId, purchase.purchaseToken);
+      const rank = TIER_RANK[tier];
+      if (rank > bestRank) {
+        bestRank = rank;
+        bestTier = tier;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "verify failed";
+      failures.push(`${purchase.productId}: ${msg}`);
+    }
+  }
+
+  if (!bestTier) {
+    sendBillingError(
+      res,
+      422,
+      "RESTORE_FAILED",
+      failures[0] ?? "No valid purchases could be restored.",
+      { failures }
+    );
+    return;
+  }
+
+  res.json({ ok: true, tier: bestTier, restored: true, failures: failures.length > 0 ? failures : undefined });
+});
