@@ -1,5 +1,3 @@
-import * as Linking from "expo-linking";
-
 import { supabase } from "@/src/lib/supabase";
 
 export async function signInWithEmail(email: string, password: string) {
@@ -8,7 +6,7 @@ export async function signInWithEmail(email: string, password: string) {
 
 /** Redirect URL for Supabase email confirmation (add to Auth URL Configuration in dashboard). */
 export function getAuthEmailRedirectUrl(): string {
-  return Linking.createURL("/(auth)/sign-in");
+  return "soundpulse://auth/sign-in";
 }
 
 export async function signUpWithEmail(email: string, password: string) {
