@@ -98,7 +98,7 @@ export default function SignInScreen() {
           onChangeText={setPassword}
         />
 
-        <Link href="/forgot-password" style={styles.forgotLink}>
+        <Link href="/(auth)/forgot-password" style={styles.forgotLink}>
           Forgot password?
         </Link>
 
@@ -110,7 +110,7 @@ export default function SignInScreen() {
           <Button label="Sign In" onPress={handleSignIn} />
         )}
 
-        <Link href="/sign-up" style={styles.link}>
+        <Link href="/(auth)/sign-up" style={styles.link}>
           Create an account
         </Link>
       </View>

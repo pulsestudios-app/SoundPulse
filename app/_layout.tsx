@@ -63,7 +63,7 @@ function useProtectedNavigation() {
   useEffect(() => {
     const handleURL = ({ url }: { url: string }) => {
       if (shouldRedirectEmptyDeepLink(url)) {
-        router.replace("/home");
+        router.replace("/(tabs)/home");
       }
     };
     const sub = Linking.addEventListener("url", handleURL);
@@ -73,7 +73,7 @@ function useProtectedNavigation() {
   useEffect(() => {
     Linking.getInitialURL().then((url) => {
       if (shouldRedirectEmptyDeepLink(url)) {
-        router.replace("/home");
+        router.replace("/(tabs)/home");
       }
     });
   }, [router, shouldRedirectEmptyDeepLink]);
@@ -101,13 +101,13 @@ function useProtectedNavigation() {
       void seedNewUserProfile(session.user.id).catch(console.error);
 
       if (inAuthGroup) {
-        router.replace("/home");
+        router.replace("/(tabs)/home");
       }
       return;
     }
 
     if (!inAuthGroup) {
-      router.replace("/sign-in");
+      router.replace("/(auth)/sign-in");
     }
   }, [isLoading, router, segments, session]);
 

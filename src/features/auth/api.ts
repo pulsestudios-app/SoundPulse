@@ -6,7 +6,7 @@ export async function signInWithEmail(email: string, password: string) {
   return supabase.auth.signInWithPassword({ email, password });
 }
 
-/** Redirect URL for Supabase email confirmation (add to Auth → URL Configuration in dashboard). */
+/** Redirect URL for Supabase email confirmation (add to Auth URL Configuration in dashboard). */
 export function getAuthEmailRedirectUrl(): string {
   return Linking.createURL("/(auth)/sign-in");
 }

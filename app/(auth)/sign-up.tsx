@@ -106,7 +106,7 @@ export default function SignUpScreen() {
     }
 
     if (user?.id) {
-      router.replace("/home");
+      router.replace("/(tabs)/home");
       return;
     }
 
@@ -157,7 +157,7 @@ export default function SignUpScreen() {
           By signing up you agree to the Terms of Service and Privacy Policy for SoundPulse.
         </Text>
 
-        <Link href="/sign-in" style={styles.link}>
+        <Link href="/(auth)/sign-in" style={styles.link}>
           Already have an account? Sign in
         </Link>
       </View>
