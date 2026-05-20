@@ -100,7 +100,7 @@ export default function ForgotPasswordScreen() {
           <Button label="Send Reset Link" onPress={handleSendReset} />
         )}
 
-        <Link href="/sign-in" style={styles.link}>
+        <Link href="/(auth)/sign-in" style={styles.link}>
           Back to Sign In
         </Link>
       </View>

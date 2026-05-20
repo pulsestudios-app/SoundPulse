@@ -91,7 +91,7 @@ export default function VerifyEmailScreen() {
 
   const handleSignOut = async () => {
     await signOut();
-    router.replace("/sign-in");
+    router.replace("/(auth)/sign-in");
   };
 
   const verified = session?.user && !needsEmailVerification(session.user);
@@ -105,11 +105,11 @@ export default function VerifyEmailScreen() {
         </Text>
         {email ? <Text style={styles.emailLine}>{email}</Text> : null}
         <Text style={styles.hint}>
-          After you confirm, return here and sign in — or open the link on this device if prompted.
+          After you confirm, return here and sign in - or open the link on this device if prompted.
         </Text>
 
         {verified ? (
-          <Button label="Continue" onPress={() => router.replace("/home")} />
+          <Button label="Continue" onPress={() => router.replace("/(tabs)/home")} />
         ) : null}
 
         {error ? <Text style={styles.err}>{error}</Text> : null}
@@ -124,7 +124,7 @@ export default function VerifyEmailScreen() {
         {session ? (
           <Button label="Sign out" variant="secondary" onPress={() => void handleSignOut()} />
         ) : (
-          <Link href="/sign-in" style={styles.link}>
+          <Link href="/(auth)/sign-in" style={styles.link}>
             Back to sign in
           </Link>
         )}

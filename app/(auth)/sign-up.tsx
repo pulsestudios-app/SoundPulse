@@ -3,6 +3,8 @@ import { useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { signUpWithEmail } from "@/src/features/auth/api";
+import { signInWithGoogle } from "@/src/features/auth/oauth";
+import { GoogleSignInButton } from "@/src/components/auth/GoogleSignInButton";
 import { needsEmailVerification } from "@/src/features/auth/emailVerification";
 import { seedNewUserProfile } from "@/src/features/auth/signupProfile";
 import { Button } from "@/src/components/core/Button";
@@ -19,6 +21,7 @@ export default function SignUpScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
   const styles = useMemo(
     () =>
@@ -57,9 +60,37 @@ export default function SignUpScreen() {
           lineHeight: 20,
           marginTop: -theme.spacing.sm,
         },
+        dividerRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: theme.spacing.md,
+        },
+        dividerLine: {
+          flex: 1,
+          height: 1,
+          backgroundColor: theme.colors.border,
+        },
+        dividerText: {
+          ...theme.typography.caption,
+          color: theme.colors.textSecondary,
+        },
       }),
     [theme]
   );
+
+  const handleGoogleSignIn = async () => {
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setIsGoogleLoading(true);
+    const { error, cancelled } = await signInWithGoogle();
+    setIsGoogleLoading(false);
+    if (cancelled) {
+      return;
+    }
+    if (error) {
+      setErrorMessage(error.message);
+    }
+  };
 
   const handleSignUp = async () => {
     setErrorMessage(null);
@@ -106,7 +137,7 @@ export default function SignUpScreen() {
     }
 
     if (user?.id) {
-      router.replace("/home");
+      router.replace("/(tabs)/home");
       return;
     }
 
@@ -118,6 +149,18 @@ export default function SignUpScreen() {
       <View style={styles.container}>
         <Text style={styles.header}>Create Account</Text>
         <Text style={styles.subtitle}>Start using SoundPulse with your email.</Text>
+
+        <GoogleSignInButton
+          onPress={handleGoogleSignIn}
+          loading={isGoogleLoading}
+          disabled={isSubmitting}
+        />
+
+        <View style={styles.dividerRow}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>or</Text>
+          <View style={styles.dividerLine} />
+        </View>
 
         <Input
           autoCapitalize="none"
@@ -150,14 +193,14 @@ export default function SignUpScreen() {
         {isSubmitting ? (
           <ActivityIndicator color={theme.colors.sky} />
         ) : (
-          <Button label="Sign Up" onPress={handleSignUp} />
+          <Button label="Sign Up" onPress={handleSignUp} disabled={isGoogleLoading} />
         )}
 
         <Text style={styles.agreeIntro}>
           By signing up you agree to the Terms of Service and Privacy Policy for SoundPulse.
         </Text>
 
-        <Link href="/sign-in" style={styles.link}>
+        <Link href="/(auth)/sign-in" style={styles.link}>
           Already have an account? Sign in
         </Link>
       </View>

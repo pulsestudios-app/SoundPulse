@@ -11,6 +11,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { seedNewUserProfile } from "@/src/features/auth/signupProfile";
 import { needsEmailVerification } from "@/src/features/auth/emailVerification";
 import { useAuthSession } from "@/src/features/auth/useAuthSession";
+import { createSessionFromOAuthUrl, isOAuthCallbackUrl } from "@/src/features/auth/oauth";
 import { ThemePreferenceProvider, useThemePreference } from "@/src/theme";
 
 const sentryDsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
@@ -60,23 +61,42 @@ function useProtectedNavigation() {
     }
   }, []);
 
+  const handleOAuthCallback = useCallback(async (url: string | null | undefined) => {
+    if (!url || !isOAuthCallbackUrl(url)) {
+      return false;
+    }
+    const { error } = await createSessionFromOAuthUrl(url);
+    if (error) {
+      console.warn("[auth] OAuth callback failed:", error.message);
+    }
+    return true;
+  }, []);
+
   useEffect(() => {
     const handleURL = ({ url }: { url: string }) => {
-      if (shouldRedirectEmptyDeepLink(url)) {
-        router.replace("/home");
-      }
+      void (async () => {
+        if (await handleOAuthCallback(url)) {
+          return;
+        }
+        if (shouldRedirectEmptyDeepLink(url)) {
+          router.replace("/(tabs)/home");
+        }
+      })();
     };
     const sub = Linking.addEventListener("url", handleURL);
     return () => sub.remove();
-  }, [router, shouldRedirectEmptyDeepLink]);
+  }, [handleOAuthCallback, router, shouldRedirectEmptyDeepLink]);
 
   useEffect(() => {
-    Linking.getInitialURL().then((url) => {
+    void Linking.getInitialURL().then(async (url) => {
+      if (await handleOAuthCallback(url)) {
+        return;
+      }
       if (shouldRedirectEmptyDeepLink(url)) {
-        router.replace("/home");
+        router.replace("/(tabs)/home");
       }
     });
-  }, [router, shouldRedirectEmptyDeepLink]);
+  }, [handleOAuthCallback, router, shouldRedirectEmptyDeepLink]);
 
   useEffect(() => {
     if (isLoading) {
@@ -101,13 +121,13 @@ function useProtectedNavigation() {
       void seedNewUserProfile(session.user.id).catch(console.error);
 
       if (inAuthGroup) {
-        router.replace("/home");
+        router.replace("/(tabs)/home");
       }
       return;
     }
 
     if (!inAuthGroup) {
-      router.replace("/sign-in");
+      router.replace("/(auth)/sign-in");
     }
   }, [isLoading, router, segments, session]);
 
