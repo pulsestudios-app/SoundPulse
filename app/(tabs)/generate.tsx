@@ -4,6 +4,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Modal,
   Pressable,
   ScrollView,
@@ -16,6 +17,7 @@ import {
 import { Button } from "@/src/components/core/Button";
 import { Card } from "@/src/components/core/Card";
 import { Input } from "@/src/components/core/Input";
+import { ResultsToast } from "@/src/components/core/ResultsToast";
 import { Screen } from "@/src/components/core/Screen";
 import { aiPreviewPlayer, formatAudioDuration } from "@/src/features/audio/aiPreviewPlayer";
 import { layerMixerEngine } from "@/src/features/audio/layerMixerEngine";
@@ -27,6 +29,7 @@ import {
 import { generateSoundscape, GenerateSoundscapeError } from "@/src/features/soundscapes/generateApi";
 import { saveLibrarySound } from "@/src/features/soundscapes/userLibrary";
 import { useScrollContentBottomPad } from "@/src/hooks/useScrollBottomInset";
+import { supabase } from "@/src/lib/supabase";
 import { useAppTheme } from "@/src/theme";
 
 type GenerateMode = "ai" | "mixer";
@@ -59,6 +62,11 @@ function sanitizeTitle(text: string, maxLen: number): string {
   return t.length <= maxLen ? t : `${t.slice(0, maxLen)}…`;
 }
 
+function generatedSoundName(prompt: string): string {
+  const words = prompt.trim().split(/\s+/).filter(Boolean).slice(0, 5);
+  return words.length > 0 ? words.join(" ") : "Generated soundscape";
+}
+
 type AiGenerationResult = {
   title: string;
   prompt: string;
@@ -85,6 +93,8 @@ export default function GenerateScreen() {
   const [aiPlaying, setAiPlaying] = useState(false);
   const [aiSaved, setAiSaved] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
 
   const [layers, setLayers] = useState(() =>
     LAYER_PRESETS.map(() => ({
@@ -98,6 +108,7 @@ export default function GenerateScreen() {
 
   const layersRef = useRef(layers);
   layersRef.current = layers;
+  const toastOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     syncMonth();
@@ -136,6 +147,47 @@ export default function GenerateScreen() {
 
   const styles = useMemo(() => stylesForTheme(theme), [theme]);
 
+  const showToast = useCallback(
+    (message: string) => {
+      setToastMessage(message);
+      setToastVisible(true);
+      toastOpacity.stopAnimation();
+      toastOpacity.setValue(0);
+      Animated.sequence([
+        Animated.timing(toastOpacity, {
+          toValue: 1,
+          duration: 180,
+          useNativeDriver: true,
+        }),
+        Animated.delay(1800),
+        Animated.timing(toastOpacity, {
+          toValue: 0,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+      ]).start(({ finished }) => {
+        if (finished) {
+          setToastVisible(false);
+        }
+      });
+    },
+    [toastOpacity]
+  );
+
+  const saveGeneratedSound = useCallback(async (result: AiGenerationResult, userId: string) => {
+    const { error } = await supabase.from("generated_sounds").insert({
+      user_id: userId,
+      name: generatedSoundName(result.prompt),
+      url: result.url,
+      duration: Math.max(0, Math.round(result.duration)),
+      prompt: result.prompt,
+    });
+
+    if (error) {
+      throw error;
+    }
+  }, []);
+
   const startAiGeneration = useCallback(async () => {
     syncMonth();
     if (!canStartAi()) {
@@ -164,12 +216,16 @@ export default function GenerateScreen() {
       const loadedDuration = await aiPreviewPlayer.load(url);
       const resolvedDuration =
         loadedDuration > 0 ? loadedDuration : duration > 0 ? duration : 15;
-      setAiResult({
+      const nextResult = {
         title: sanitizeTitle(raw, 48),
         prompt: raw,
         url,
         duration: resolvedDuration,
-      });
+      };
+      setAiResult(nextResult);
+      await saveGeneratedSound(nextResult, userId);
+      setAiSaved(true);
+      showToast("Sound saved to library");
     } catch (e) {
       const message =
         e instanceof GenerateSoundscapeError
@@ -181,7 +237,7 @@ export default function GenerateScreen() {
     } finally {
       setAiLoading(false);
     }
-  }, [prompt, session?.user?.id, syncMonth, canStartAi, recordSuccess]);
+  }, [prompt, session?.user?.id, syncMonth, canStartAi, recordSuccess, saveGeneratedSound, showToast]);
 
   const toggleAiPlay = useCallback(async () => {
     if (!aiResult?.url) return;
@@ -190,19 +246,16 @@ export default function GenerateScreen() {
   }, [aiResult?.url]);
 
   const saveAiResult = useCallback(async () => {
-    if (!aiResult) return;
-    await saveLibrarySound({
-      kind: "ai",
-      title: aiResult.title,
-      subtitle: "AI Generate",
-      payload: JSON.stringify({
-        prompt: aiResult.prompt,
-        url: aiResult.url,
-        duration: aiResult.duration,
-      }),
-    }).catch(console.error);
-    setAiSaved(true);
-  }, [aiResult]);
+    const userId = session?.user?.id;
+    if (!aiResult || !userId || aiSaved) return;
+    try {
+      await saveGeneratedSound(aiResult, userId);
+      setAiSaved(true);
+      showToast("Sound saved to library");
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : "Could not save sound.");
+    }
+  }, [aiResult, aiSaved, saveGeneratedSound, session?.user?.id, showToast]);
 
   const toggleMixerPlay = useCallback(async () => {
     if (layerMixerEngine.isPlaying() || mixPlaying) {
@@ -467,6 +520,7 @@ export default function GenerateScreen() {
           </View>
         </View>
       </Modal>
+      <ResultsToast visible={toastVisible} message={toastMessage} opacityAnim={toastOpacity} theme={theme} />
     </Screen>
   );
 }

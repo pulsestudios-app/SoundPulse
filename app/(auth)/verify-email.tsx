@@ -1,5 +1,5 @@
 import { Link, useLocalSearchParams, useRouter } from "expo-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { resendSignupConfirmationEmail, signOut } from "@/src/features/auth/api";
@@ -7,6 +7,7 @@ import { needsEmailVerification } from "@/src/features/auth/emailVerification";
 import { useAuthSession } from "@/src/features/auth/useAuthSession";
 import { Button } from "@/src/components/core/Button";
 import { Screen } from "@/src/components/core/Screen";
+import { supabase } from "@/src/lib/supabase";
 import { useAppTheme } from "@/src/theme";
 
 export default function VerifyEmailScreen() {
@@ -21,6 +22,26 @@ export default function VerifyEmailScreen() {
   const [status, setStatus] = useState<"idle" | "sending">("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (nextSession?.user && !needsEmailVerification(nextSession.user)) {
+        router.replace("/(tabs)/home");
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [router]);
+
+  useEffect(() => {
+    if (session?.user && !needsEmailVerification(session.user)) {
+      router.replace("/(tabs)/home");
+    }
+  }, [router, session?.user]);
 
   const styles = useMemo(
     () =>
@@ -86,7 +107,7 @@ export default function VerifyEmailScreen() {
       setError(resendErr.message);
       return;
     }
-    setMessage("Confirmation email sent again. Check your inbox.");
+    setMessage("Email sent. Check your inbox.");
   };
 
   const handleSignOut = async () => {
@@ -118,16 +139,16 @@ export default function VerifyEmailScreen() {
         {status === "sending" ? (
           <ActivityIndicator color={theme.colors.sky} />
         ) : (
-          <Button label="Resend confirmation email" variant="secondary" onPress={() => void handleResend()} />
+          <Button label="Resend email" variant="secondary" onPress={() => void handleResend()} />
         )}
 
-        {session ? (
-          <Button label="Sign out" variant="secondary" onPress={() => void handleSignOut()} />
-        ) : (
+        <Button label="Sign out" variant="secondary" onPress={() => void handleSignOut()} />
+
+        {!session ? (
           <Link href="/(auth)/sign-in" style={styles.link}>
             Back to sign in
           </Link>
-        )}
+        ) : null}
       </View>
     </Screen>
   );
