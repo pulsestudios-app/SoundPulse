@@ -3,6 +3,8 @@ import { useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { signInWithEmail } from "@/src/features/auth/api";
+import { signInWithGoogle } from "@/src/features/auth/oauth";
+import { GoogleSignInButton } from "@/src/components/auth/GoogleSignInButton";
 import { Button } from "@/src/components/core/Button";
 import { Input } from "@/src/components/core/Input";
 import { Screen } from "@/src/components/core/Screen";
@@ -14,6 +16,7 @@ export default function SignInScreen() {
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
   const styles = useMemo(
     () =>
@@ -46,9 +49,36 @@ export default function SignInScreen() {
           color: theme.colors.sky,
           alignSelf: "flex-start",
         },
+        dividerRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: theme.spacing.md,
+        },
+        dividerLine: {
+          flex: 1,
+          height: 1,
+          backgroundColor: theme.colors.border,
+        },
+        dividerText: {
+          ...theme.typography.caption,
+          color: theme.colors.textSecondary,
+        },
       }),
     [theme]
   );
+
+  const handleGoogleSignIn = async () => {
+    setErrorMessage(null);
+    setIsGoogleLoading(true);
+    const { error, cancelled } = await signInWithGoogle();
+    setIsGoogleLoading(false);
+    if (cancelled) {
+      return;
+    }
+    if (error) {
+      setErrorMessage(error.message);
+    }
+  };
 
   const handleSignIn = async () => {
     setErrorMessage(null);
@@ -81,6 +111,18 @@ export default function SignInScreen() {
         <Text style={styles.header}>Welcome Back</Text>
         <Text style={styles.subtitle}>Sign in to continue with SoundPulse.</Text>
 
+        <GoogleSignInButton
+          onPress={handleGoogleSignIn}
+          loading={isGoogleLoading}
+          disabled={isSubmitting}
+        />
+
+        <View style={styles.dividerRow}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>or</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
         <Input
           autoCapitalize="none"
           autoComplete="email"
@@ -107,7 +149,7 @@ export default function SignInScreen() {
         {isSubmitting ? (
           <ActivityIndicator color={theme.colors.sky} />
         ) : (
-          <Button label="Sign In" onPress={handleSignIn} />
+          <Button label="Sign In" onPress={handleSignIn} disabled={isGoogleLoading} />
         )}
 
         <Link href="/(auth)/sign-up" style={styles.link}>
