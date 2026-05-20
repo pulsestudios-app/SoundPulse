@@ -8,7 +8,7 @@ const appJson = require("./app.json");
 
 const basePlugins = appJson.expo.plugins || [];
 const plugins = Array.from(
-  new Set([...basePlugins, "expo-web-browser", "./plugins/withReactNativeSvg"])
+  new Set([...basePlugins, "./plugins/withReactNativeSvg"])
 );
 
 /** @type {import('expo/config').ExpoConfig} */
@@ -16,6 +16,9 @@ module.exports = {
   expo: {
     ...appJson.expo,
     scheme: "soundpulse",
+    cli: {
+      appVersionSource: "remote",
+    },
     android: {
       ...appJson.expo.android,
       package: "com.soundpulseapp.android",
