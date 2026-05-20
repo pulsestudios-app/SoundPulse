@@ -6,10 +6,21 @@ require("dotenv").config({
 
 const appJson = require("./app.json");
 
+const basePlugins = appJson.expo.plugins || [];
+const plugins = Array.from(
+  new Set([...basePlugins, "expo-web-browser", "./plugins/withReactNativeSvg"])
+);
+
 /** @type {import('expo/config').ExpoConfig} */
 module.exports = {
   expo: {
     ...appJson.expo,
+    scheme: "soundpulse",
+    android: {
+      ...appJson.expo.android,
+      package: "com.soundpulseapp.android",
+    },
+    plugins,
     extra: {
       backendUrl: process.env.EXPO_PUBLIC_BACKEND_URL,
       appSecretKey: process.env.EXPO_PUBLIC_APP_KEY,
