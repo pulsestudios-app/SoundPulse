@@ -19,6 +19,12 @@ module.exports = {
     cli: {
       appVersionSource: "remote",
     },
+    updates: {
+      url: "https://u.expo.dev/1ca89701-a6a7-4b1b-97cb-51311f7ed9b9",
+    },
+    runtimeVersion: {
+      policy: "appVersion",
+    },
     android: {
       ...appJson.expo.android,
       package: "com.soundpulseapp.android",
