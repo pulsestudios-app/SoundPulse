@@ -1,21 +1,27 @@
-/** Royalty-free ambience loops (StudyPulse public music bucket — same CDN pattern as focus engine). */
-const MUSIC_PUBLIC_BASE =
-  "https://uhfavszrclwwwnimxsbr.supabase.co/storage/v1/object/public/music/";
+/**
+ * Layer Mixer audio — royalty-free loops that match each layer label.
+ * Files live in assets/sounds/layers/ (see ATTRIBUTION.md).
+ *
+ * Served via jsDelivr from this repo. To self-host on SoundPulse Supabase instead:
+ * upload MP3s to a public bucket (e.g. `soundscapes/layers/`) and point URLs there.
+ */
+const LAYER_CDN_BASE =
+  "https://cdn.jsdelivr.net/gh/florianbelice4-bit/SoundPulse@master/assets/sounds/layers";
 
-function musicFileUrl(fileName: string): string {
-  return `${MUSIC_PUBLIC_BASE}${encodeURIComponent(fileName)}`;
+function layerUrl(fileName: string): string {
+  return `${LAYER_CDN_BASE}/${encodeURIComponent(fileName)}`;
 }
 
 export type LayerAudioKey = "rain" | "ocean" | "wind" | "fire" | "white" | "forest";
 
-/** One loop per mixer layer — distinct files where possible. */
+/** One loop per mixer layer — distinct files, label-accurate ambience. */
 export const LAYER_AUDIO_URI: Record<LayerAudioKey, string> = {
-  rain: musicFileUrl("rain ambience (1).mp3"),
-  ocean: musicFileUrl("ocean waves (1).mp3"),
-  wind: musicFileUrl("brown noise (2).mp3"),
-  fire: musicFileUrl("cafe ambience (4).mp3"),
-  white: musicFileUrl("white noise (1).mp3"),
-  forest: musicFileUrl("rain ambience (5).mp3"),
+  rain: layerUrl("rain.mp3"),
+  ocean: layerUrl("ocean.mp3"),
+  wind: layerUrl("wind.mp3"),
+  fire: layerUrl("fire.mp3"),
+  white: layerUrl("white.mp3"),
+  forest: layerUrl("forest.mp3"),
 };
 
 export function getLayerAudioUri(key: string): string | null {
