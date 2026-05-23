@@ -6,6 +6,11 @@ import {
   ElevenLabsGenerationError,
   generateSoundEffect,
 } from "../services/elevenlabs.js";
+import {
+  assertCanGenerate,
+  GenerationLimitError,
+  incrementGenerationCount,
+} from "../services/generationLimits.js";
 import { uploadGeneratedSoundscape } from "../services/soundscapeStorage.js";
 
 export const soundsRouter = express.Router();
@@ -47,14 +52,21 @@ soundsRouter.post("/generate", authenticateUser, async (req: Request, res: Respo
 
     const durationSeconds = clampDuration(body.duration_seconds);
 
+    await assertCanGenerate(authUserId);
+
     const audioBuffer = await generateSoundEffect(prompt, durationSeconds);
     const stored = await uploadGeneratedSoundscape(authUserId, audioBuffer, durationSeconds);
+
+    await incrementGenerationCount(authUserId);
 
     return res.json({
       url: stored.url,
       duration: stored.duration,
     });
   } catch (err) {
+    if (err instanceof GenerationLimitError) {
+      return res.status(403).json({ error: err.code });
+    }
     if (err instanceof ElevenLabsConfigError) {
       return res.status(503).json({ error: err.message });
     }

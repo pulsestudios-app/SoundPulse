@@ -8,12 +8,24 @@ export type GenerateSoundscapeResult = {
 
 export class GenerateSoundscapeError extends Error {
   readonly status: number;
+  readonly code?: string;
 
-  constructor(message: string, status = 500) {
+  constructor(message: string, status = 500, code?: string) {
     super(message);
     this.name = "GenerateSoundscapeError";
     this.status = status;
+    this.code = code;
   }
+}
+
+const GENERATION_ERROR_MESSAGES: Record<string, string> = {
+  GENERATION_LIMIT_REACHED:
+    "You've used all your AI generations this month. Upgrade to generate more.",
+  PAID_PLAN_REQUIRED: "AI generation requires a paid plan. Upgrade to start generating sounds.",
+};
+
+function messageForGenerationError(code: string): string {
+  return GENERATION_ERROR_MESSAGES[code] ?? code;
 }
 
 export async function generateSoundscape(
@@ -49,10 +61,9 @@ export async function generateSoundscape(
   }
 
   if (!res.ok) {
-    throw new GenerateSoundscapeError(
-      typeof parsed.error === "string" ? parsed.error : text || `Request failed (${res.status})`,
-      res.status
-    );
+    const code = typeof parsed.error === "string" ? parsed.error : undefined;
+    const message = code ? messageForGenerationError(code) : text || `Request failed (${res.status})`;
+    throw new GenerateSoundscapeError(message, res.status, code);
   }
 
   const url = typeof parsed.url === "string" ? parsed.url.trim() : "";

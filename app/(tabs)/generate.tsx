@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -22,10 +22,6 @@ import { Screen } from "@/src/components/core/Screen";
 import { aiPreviewPlayer, formatAudioDuration } from "@/src/features/audio/aiPreviewPlayer";
 import { layerMixerEngine } from "@/src/features/audio/layerMixerEngine";
 import { useAuthSession } from "@/src/features/auth/useAuthSession";
-import {
-  FREE_AI_GENERATIONS_PER_MONTH,
-  useGenerateEntitlementsStore,
-} from "@/src/features/generate/entitlementsStore";
 import { generateSoundscape, GenerateSoundscapeError } from "@/src/features/soundscapes/generateApi";
 import { saveLibrarySound } from "@/src/features/soundscapes/userLibrary";
 import { useScrollContentBottomPad } from "@/src/hooks/useScrollBottomInset";
@@ -79,15 +75,11 @@ export default function GenerateScreen() {
   const theme = useAppTheme();
   const scrollBottomPad = useScrollContentBottomPad(24);
   const { session } = useAuthSession();
-  const syncMonth = useGenerateEntitlementsStore((s) => s.syncMonth);
-  const canStartAi = useGenerateEntitlementsStore((s) => s.canStartAiGeneration);
-  const recordSuccess = useGenerateEntitlementsStore((s) => s.recordAiGenerationSuccess);
-  const isPremium = useGenerateEntitlementsStore((s) => s.isPremium);
-  const usedAi = useGenerateEntitlementsStore((s) => s.aiGenerationsUsed);
 
   const [mode, setMode] = useState<GenerateMode>("ai");
   const [prompt, setPrompt] = useState("");
   const [paywallVisible, setPaywallVisible] = useState(false);
+  const [paywallMessage, setPaywallMessage] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState<AiGenerationResult | null>(null);
   const [aiPlaying, setAiPlaying] = useState(false);
@@ -109,10 +101,6 @@ export default function GenerateScreen() {
   const layersRef = useRef(layers);
   layersRef.current = layers;
   const toastOpacity = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    syncMonth();
-  }, [syncMonth]);
 
   const layerStatesForEngine = useCallback(
     () =>
@@ -170,11 +158,6 @@ export default function GenerateScreen() {
   }, []);
 
   const startAiGeneration = useCallback(async () => {
-    syncMonth();
-    if (!canStartAi()) {
-      setPaywallVisible(true);
-      return;
-    }
     const raw = prompt.trim();
     if (!raw) return;
 
@@ -193,7 +176,6 @@ export default function GenerateScreen() {
 
     try {
       const { url, duration } = await generateSoundscape(raw, userId);
-      recordSuccess();
       const loadedDuration = await aiPreviewPlayer.load(url);
       const resolvedDuration =
         loadedDuration > 0 ? loadedDuration : duration > 0 ? duration : 15;
@@ -208,17 +190,19 @@ export default function GenerateScreen() {
       setAiSaved(true);
       showToast("Sound saved to library");
     } catch (e) {
-      const message =
-        e instanceof GenerateSoundscapeError
-          ? e.message
-          : e instanceof Error
-            ? e.message
-            : "Generation failed";
-      setAiError(message);
+      if (e instanceof GenerateSoundscapeError) {
+        if (e.code === "GENERATION_LIMIT_REACHED" || e.code === "PAID_PLAN_REQUIRED") {
+          setPaywallMessage(e.message);
+          setPaywallVisible(true);
+        }
+        setAiError(e.message);
+      } else {
+        setAiError(e instanceof Error ? e.message : "Generation failed");
+      }
     } finally {
       setAiLoading(false);
     }
-  }, [prompt, session?.user?.id, syncMonth, canStartAi, recordSuccess, saveGeneratedSound, showToast]);
+  }, [prompt, session?.user?.id, saveGeneratedSound, showToast]);
 
   const toggleAiPlay = useCallback(async () => {
     if (!aiResult?.url) return;
@@ -306,8 +290,6 @@ export default function GenerateScreen() {
     setMixSaved(true);
   }, [layers]);
 
-  const quotaLabelFree = `${usedAi}/${FREE_AI_GENERATIONS_PER_MONTH} AI generations this month`;
-
   return (
     <Screen>
       <ScrollView
@@ -335,8 +317,6 @@ export default function GenerateScreen() {
             <Text style={[styles.modeText, mode === "mixer" && styles.modeTextActive]}>Layer Mixer</Text>
           </Pressable>
         </View>
-
-        {!isPremium ? <Text style={styles.quotaHint}>{quotaLabelFree}</Text> : null}
 
         {mode === "ai" ? (
           <>
@@ -484,10 +464,10 @@ export default function GenerateScreen() {
         <View style={styles.paywallBackdrop}>
           <Pressable style={styles.paywallBackdropFill} onPress={() => setPaywallVisible(false)} />
           <View style={styles.paywallCard}>
-            <Text style={styles.paywallTitle}>Monthly limit reached</Text>
+            <Text style={styles.paywallTitle}>Upgrade to generate</Text>
             <Text style={styles.paywallBody}>
-              Free accounts get {FREE_AI_GENERATIONS_PER_MONTH} AI generations each month. Upgrade for unlimited ambient
-              creation.
+              {paywallMessage ||
+                "You've used all your AI generations this month. Upgrade to generate more."}
             </Text>
             <Button
               label="View plans · Profile"
