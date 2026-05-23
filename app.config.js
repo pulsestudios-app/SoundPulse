@@ -15,10 +15,22 @@ const plugins = Array.from(
 module.exports = {
   expo: {
     ...appJson.expo,
+    icon: "./assets/icon.png",
     scheme: "soundpulse",
+    splash: {
+      ...appJson.expo.splash,
+      image: "./assets/splash.png",
+      backgroundColor: "#0A0A1A",
+      resizeMode: "contain",
+    },
     android: {
       ...appJson.expo.android,
       package: "com.soundpulseapp.android",
+      adaptiveIcon: {
+        ...appJson.expo.android?.adaptiveIcon,
+        foregroundImage: "./assets/icon.png",
+        backgroundColor: "#0A0A1A",
+      },
     },
     plugins,
     extra: {
