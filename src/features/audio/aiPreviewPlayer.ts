@@ -1,5 +1,10 @@
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
 
+import { linearFadeVolume } from "./fadeVolume";
+import { registerPlaybackHandler, unregisterPlaybackHandler } from "./playbackRegistry";
+
+const HANDLER_ID = "ai-preview";
+
 function formatDuration(seconds: number): string {
   const total = Math.max(0, Math.floor(seconds));
   const m = Math.floor(total / 60);
@@ -16,6 +21,20 @@ class AiPreviewPlayer {
   private sound: Audio.Sound | null = null;
   private url: string | null = null;
   private audioModeConfigured = false;
+  private baseVolume = 1;
+
+  private register(): void {
+    registerPlaybackHandler({
+      id: HANDLER_ID,
+      fadeOut: (durationMs) => this.fadeOut(durationMs),
+      restoreVolume: () => this.restoreVolume(),
+      stop: () => this.stop(),
+    });
+  }
+
+  private unregister(): void {
+    unregisterPlaybackHandler(HANDLER_ID);
+  }
 
   private async ensureBackgroundAudioMode(): Promise<void> {
     if (this.audioModeConfigured) {
@@ -53,10 +72,12 @@ class AiPreviewPlayer {
   async play(): Promise<void> {
     await this.ensureBackgroundAudioMode();
     await this.sound?.playAsync();
+    this.register();
   }
 
   async pause(): Promise<void> {
     await this.sound?.pauseAsync();
+    this.unregister();
   }
 
   async toggle(url: string): Promise<boolean> {
@@ -85,7 +106,36 @@ class AiPreviewPlayer {
     return !!(status?.isLoaded && status.isPlaying);
   }
 
+  async fadeOut(durationMs: number): Promise<void> {
+    if (!this.sound) {
+      return;
+    }
+    await linearFadeVolume(
+      () => this.baseVolume,
+      async (volume) => {
+        await this.sound?.setVolumeAsync(volume);
+      },
+      durationMs
+    );
+  }
+
+  async restoreVolume(): Promise<void> {
+    if (!this.sound) {
+      return;
+    }
+    try {
+      await this.sound.setVolumeAsync(this.baseVolume);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async stop(): Promise<void> {
+    await this.unload();
+  }
+
   async unload(): Promise<void> {
+    this.unregister();
     if (!this.sound) {
       this.url = null;
       return;
@@ -102,6 +152,7 @@ class AiPreviewPlayer {
     }
     this.sound = null;
     this.url = null;
+    this.baseVolume = 1;
   }
 }
 

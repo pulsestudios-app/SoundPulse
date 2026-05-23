@@ -1,6 +1,10 @@
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
 
+import { linearFadeVolume, sleep } from "./fadeVolume";
 import { getLayerAudioUri } from "./layerSources";
+import { registerPlaybackHandler, unregisterPlaybackHandler } from "./playbackRegistry";
+
+const HANDLER_ID = "layer-mixer";
 
 export type LayerMixerLayerState = {
   key: string;
@@ -17,8 +21,22 @@ function volumeGain(percent: number): number {
  */
 class LayerMixerEngine {
   private sounds = new Map<string, Audio.Sound>();
+  private baseVolumes = new Map<string, number>();
   private audioModeConfigured = false;
   private playing = false;
+
+  private register(): void {
+    registerPlaybackHandler({
+      id: HANDLER_ID,
+      fadeOut: (durationMs) => this.fadeOut(durationMs),
+      restoreVolume: () => this.restoreVolume(),
+      stop: () => this.stopMix(),
+    });
+  }
+
+  private unregister(): void {
+    unregisterPlaybackHandler(HANDLER_ID);
+  }
 
   isPlaying(): boolean {
     return this.playing;
@@ -46,6 +64,7 @@ class LayerMixerEngine {
       return;
     }
     this.sounds.delete(key);
+    this.baseVolumes.delete(key);
     try {
       await sound.stopAsync();
     } catch {
@@ -65,6 +84,7 @@ class LayerMixerEngine {
     }
     try {
       await sound.setVolumeAsync(volumeGain(volumePercent));
+      this.baseVolumes.set(key, volumeGain(volumePercent));
     } catch {
       /* ignore */
     }
@@ -89,6 +109,7 @@ class LayerMixerEngine {
         true
       );
       this.sounds.set(key, sound);
+      this.baseVolumes.set(key, volumeGain(volumePercent));
     } catch (e) {
       console.error("[LayerMixer] Failed to load layer:", key, e);
     }
@@ -106,9 +127,51 @@ class LayerMixerEngine {
     }
     await Promise.all(enabled.map((l) => this.startLayer(l.key, l.volume)));
     this.playing = this.sounds.size > 0;
+    if (this.playing) {
+      this.register();
+    }
+  }
+
+  async fadeOut(durationMs: number): Promise<void> {
+    const entries = [...this.sounds.entries()];
+    if (entries.length === 0) {
+      return;
+    }
+    const steps = 30;
+    const stepMs = durationMs / steps;
+    for (let step = steps; step >= 0; step -= 1) {
+      const factor = step / steps;
+      await Promise.all(
+        entries.map(async ([key, sound]) => {
+          const base = this.baseVolumes.get(key) ?? 1;
+          try {
+            await sound.setVolumeAsync(base * factor);
+          } catch {
+            /* ignore */
+          }
+        })
+      );
+      if (step > 0) {
+        await sleep(stepMs);
+      }
+    }
+  }
+
+  async restoreVolume(): Promise<void> {
+    await Promise.all(
+      [...this.sounds.entries()].map(async ([key, sound]) => {
+        const base = this.baseVolumes.get(key) ?? 1;
+        try {
+          await sound.setVolumeAsync(base);
+        } catch {
+          /* ignore */
+        }
+      })
+    );
   }
 
   async stopMix(): Promise<void> {
+    this.unregister();
     const keys = [...this.sounds.keys()];
     await Promise.all(keys.map((k) => this.unloadLayer(k)));
     this.playing = false;

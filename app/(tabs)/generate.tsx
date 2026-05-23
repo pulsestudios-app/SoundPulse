@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import { useRouter } from "expo-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -17,10 +17,12 @@ import {
 import { Button } from "@/src/components/core/Button";
 import { Card } from "@/src/components/core/Card";
 import { Input } from "@/src/components/core/Input";
+import { PlaybackTimer } from "@/src/components/audio/PlaybackTimer";
 import { ResultsToast } from "@/src/components/core/ResultsToast";
 import { Screen } from "@/src/components/core/Screen";
 import { aiPreviewPlayer, formatAudioDuration } from "@/src/features/audio/aiPreviewPlayer";
 import { layerMixerEngine } from "@/src/features/audio/layerMixerEngine";
+import { onPlaybackStopped } from "@/src/features/audio/playbackRegistry";
 import { useAuthSession } from "@/src/features/auth/useAuthSession";
 import { generateSoundscape, GenerateSoundscapeError } from "@/src/features/soundscapes/generateApi";
 import { saveLibrarySound } from "@/src/features/soundscapes/userLibrary";
@@ -101,6 +103,13 @@ export default function GenerateScreen() {
   const layersRef = useRef(layers);
   layersRef.current = layers;
   const toastOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    return onPlaybackStopped(() => {
+      setAiPlaying(false);
+      setMixPlaying(false);
+    });
+  }, []);
 
   const layerStatesForEngine = useCallback(
     () =>
@@ -317,6 +326,8 @@ export default function GenerateScreen() {
             <Text style={[styles.modeText, mode === "mixer" && styles.modeTextActive]}>Layer Mixer</Text>
           </Pressable>
         </View>
+
+        <PlaybackTimer isPlaying={aiPlaying || mixPlaying} />
 
         {mode === "ai" ? (
           <>

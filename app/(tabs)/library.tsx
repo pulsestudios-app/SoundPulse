@@ -1,6 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Audio, InterruptionModeAndroid, InterruptionModeIOS, type AVPlaybackStatus } from "expo-av";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -11,10 +10,13 @@ import {
   View,
 } from "react-native";
 
+import { PlaybackTimer } from "@/src/components/audio/PlaybackTimer";
 import { Screen } from "@/src/components/core/Screen";
-import { supabase } from "@/src/lib/supabase";
+import { libraryPlayer } from "@/src/features/audio/libraryPlayer";
+import { onPlaybackStopped } from "@/src/features/audio/playbackRegistry";
 import { useAuthSession } from "@/src/features/auth/useAuthSession";
 import { useScrollContentBottomPad } from "@/src/hooks/useScrollBottomInset";
+import { supabase } from "@/src/lib/supabase";
 import { useAppTheme } from "@/src/theme";
 
 type GeneratedSoundRow = {
@@ -68,8 +70,6 @@ export default function LibraryScreen() {
   const theme = useAppTheme();
   const scrollBottomPad = useScrollContentBottomPad(28);
   const { session } = useAuthSession();
-  const soundRef = useRef<Audio.Sound | null>(null);
-  const audioModeConfiguredRef = useRef(false);
 
   const [sounds, setSounds] = useState<GeneratedSoundRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -206,49 +206,18 @@ export default function LibraryScreen() {
     [scrollBottomPad, theme]
   );
 
-  const unloadCurrentSound = useCallback(async (updateState = true) => {
-    const sound = soundRef.current;
-    soundRef.current = null;
-    if (updateState) {
+  useEffect(() => {
+    return onPlaybackStopped(() => {
       setPlayingSoundId(null);
       setActiveSoundId(null);
-    }
-    if (!sound) {
-      return;
-    }
-    try {
-      await sound.stopAsync();
-    } catch {
-      /* ignore */
-    }
-    try {
-      await sound.unloadAsync();
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  const ensureBackgroundAudioMode = useCallback(async () => {
-    if (audioModeConfiguredRef.current) {
-      return;
-    }
-    await Audio.setAudioModeAsync({
-      staysActiveInBackground: true,
-      playsInSilentModeIOS: true,
-      interruptionModeIOS: InterruptionModeIOS.DoNotMix,
-      interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
-      shouldDuckAndroid: false,
-      playThroughEarpieceAndroid: false,
-      allowsRecordingIOS: false,
     });
-    audioModeConfiguredRef.current = true;
   }, []);
 
   useEffect(() => {
     return () => {
-      void unloadCurrentSound(false);
+      void libraryPlayer.unload();
     };
-  }, [unloadCurrentSound]);
+  }, []);
 
   const loadSounds = useCallback(
     async ({ showInitialLoading }: { showInitialLoading: boolean }) => {
@@ -294,60 +263,30 @@ export default function LibraryScreen() {
     loadSounds({ showInitialLoading: false }).finally(() => setRefreshing(false));
   }, [loadSounds]);
 
-  const onPlaybackStatusUpdate = useCallback((status: AVPlaybackStatus) => {
-    if (!status.isLoaded) {
+  const playSound = useCallback(async (sound: GeneratedSoundRow) => {
+    if (!sound.url) {
+      setErrorMessage("This sound does not have a playable URL yet.");
       return;
     }
-    if (status.didJustFinish) {
+
+    setErrorMessage(null);
+    setLoadingSoundId(sound.id);
+
+    try {
+      const { playing } = await libraryPlayer.toggle(sound.id, sound.url, () => {
+        setPlayingSoundId(null);
+        setActiveSoundId(null);
+      });
+      setActiveSoundId(playing ? sound.id : libraryPlayer.getActiveSoundId());
+      setPlayingSoundId(playing ? sound.id : null);
+    } catch (e) {
+      setErrorMessage(e instanceof Error ? e.message : "Could not play this sound.");
       setPlayingSoundId(null);
       setActiveSoundId(null);
+    } finally {
+      setLoadingSoundId(null);
     }
   }, []);
-
-  const playSound = useCallback(
-    async (sound: GeneratedSoundRow) => {
-      if (!sound.url) {
-        setErrorMessage("This sound does not have a playable URL yet.");
-        return;
-      }
-
-      setErrorMessage(null);
-
-      if (activeSoundId === sound.id && soundRef.current) {
-        const status = await soundRef.current.getStatusAsync();
-        if (status.isLoaded && status.isPlaying) {
-          await soundRef.current.pauseAsync();
-          setPlayingSoundId(null);
-          return;
-        }
-        await ensureBackgroundAudioMode();
-        await soundRef.current.playAsync();
-        setPlayingSoundId(sound.id);
-        return;
-      }
-
-      setLoadingSoundId(sound.id);
-      await unloadCurrentSound();
-
-      try {
-        await ensureBackgroundAudioMode();
-        const { sound: nextSound } = await Audio.Sound.createAsync(
-          { uri: sound.url },
-          { shouldPlay: true, isLooping: false, volume: 1 },
-          onPlaybackStatusUpdate,
-          true
-        );
-        soundRef.current = nextSound;
-        setActiveSoundId(sound.id);
-        setPlayingSoundId(sound.id);
-      } catch (e) {
-        setErrorMessage(e instanceof Error ? e.message : "Could not play this sound.");
-      } finally {
-        setLoadingSoundId(null);
-      }
-    },
-    [activeSoundId, ensureBackgroundAudioMode, onPlaybackStatusUpdate, unloadCurrentSound]
-  );
 
   const renderContent = () => {
     if (loading) {
@@ -452,6 +391,8 @@ export default function LibraryScreen() {
           <Text style={styles.title}>Library</Text>
           <Text style={styles.intro}>Replay the AI soundscapes you have saved.</Text>
         </View>
+
+        <PlaybackTimer isPlaying={!!playingSoundId} />
 
         {renderContent()}
       </ScrollView>
