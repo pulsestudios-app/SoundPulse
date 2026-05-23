@@ -4,14 +4,14 @@
     "slug": "SoundPulse",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/soundpulse-icon-2048.png",
     "userInterfaceStyle": "dark",
     "scheme": "soundpulse",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/soundpulse-icon-2048.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0A0A0F"
+      "backgroundColor": "#0A0A1A"
     },
     "ios": {
       "supportsTablet": true,
@@ -21,8 +21,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0A0A0F"
+        "foregroundImage": "./assets/soundpulse-icon-2048.png",
+        "backgroundColor": "#0A0A1A"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
