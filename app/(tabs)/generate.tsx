@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -113,25 +113,6 @@ export default function GenerateScreen() {
   useEffect(() => {
     syncMonth();
   }, [syncMonth]);
-
-  useEffect(() => {
-    return () => {
-      void layerMixerEngine.stopMix();
-      void aiPreviewPlayer.unload();
-    };
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      return () => {
-        void layerMixerEngine.stopMix();
-        void aiPreviewPlayer.unload();
-        setMixPlaying(false);
-        setMixLoading(false);
-        setAiPlaying(false);
-      };
-    }, [])
-  );
 
   const layerStatesForEngine = useCallback(
     () =>

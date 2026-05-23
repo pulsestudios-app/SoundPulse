@@ -1,4 +1,4 @@
-import { Audio } from "expo-av";
+import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
 
 function formatDuration(seconds: number): string {
   const total = Math.max(0, Math.floor(seconds));
@@ -15,8 +15,26 @@ export { formatDuration as formatAudioDuration };
 class AiPreviewPlayer {
   private sound: Audio.Sound | null = null;
   private url: string | null = null;
+  private audioModeConfigured = false;
+
+  private async ensureBackgroundAudioMode(): Promise<void> {
+    if (this.audioModeConfigured) {
+      return;
+    }
+    await Audio.setAudioModeAsync({
+      staysActiveInBackground: true,
+      playsInSilentModeIOS: true,
+      interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+      interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+      shouldDuckAndroid: false,
+      playThroughEarpieceAndroid: false,
+      allowsRecordingIOS: false,
+    });
+    this.audioModeConfigured = true;
+  }
 
   async load(url: string): Promise<number> {
+    await this.ensureBackgroundAudioMode();
     await this.unload();
     const { sound, status } = await Audio.Sound.createAsync(
       { uri: url },
@@ -33,6 +51,7 @@ class AiPreviewPlayer {
   }
 
   async play(): Promise<void> {
+    await this.ensureBackgroundAudioMode();
     await this.sound?.playAsync();
   }
 

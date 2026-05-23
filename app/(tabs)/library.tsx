@@ -1,6 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Audio, type AVPlaybackStatus } from "expo-av";
-import { useFocusEffect } from "expo-router";
+import { Audio, InterruptionModeAndroid, InterruptionModeIOS, type AVPlaybackStatus } from "expo-av";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -70,6 +69,7 @@ export default function LibraryScreen() {
   const scrollBottomPad = useScrollContentBottomPad(28);
   const { session } = useAuthSession();
   const soundRef = useRef<Audio.Sound | null>(null);
+  const audioModeConfiguredRef = useRef(false);
 
   const [sounds, setSounds] = useState<GeneratedSoundRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -228,19 +228,27 @@ export default function LibraryScreen() {
     }
   }, []);
 
+  const ensureBackgroundAudioMode = useCallback(async () => {
+    if (audioModeConfiguredRef.current) {
+      return;
+    }
+    await Audio.setAudioModeAsync({
+      staysActiveInBackground: true,
+      playsInSilentModeIOS: true,
+      interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+      interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+      shouldDuckAndroid: false,
+      playThroughEarpieceAndroid: false,
+      allowsRecordingIOS: false,
+    });
+    audioModeConfiguredRef.current = true;
+  }, []);
+
   useEffect(() => {
     return () => {
       void unloadCurrentSound(false);
     };
   }, [unloadCurrentSound]);
-
-  useFocusEffect(
-    useCallback(() => {
-      return () => {
-        void unloadCurrentSound();
-      };
-    }, [unloadCurrentSound])
-  );
 
   const loadSounds = useCallback(
     async ({ showInitialLoading }: { showInitialLoading: boolean }) => {
@@ -312,6 +320,7 @@ export default function LibraryScreen() {
           setPlayingSoundId(null);
           return;
         }
+        await ensureBackgroundAudioMode();
         await soundRef.current.playAsync();
         setPlayingSoundId(sound.id);
         return;
@@ -321,6 +330,7 @@ export default function LibraryScreen() {
       await unloadCurrentSound();
 
       try {
+        await ensureBackgroundAudioMode();
         const { sound: nextSound } = await Audio.Sound.createAsync(
           { uri: sound.url },
           { shouldPlay: true, isLooping: false, volume: 1 },
@@ -336,7 +346,7 @@ export default function LibraryScreen() {
         setLoadingSoundId(null);
       }
     },
-    [activeSoundId, onPlaybackStatusUpdate, unloadCurrentSound]
+    [activeSoundId, ensureBackgroundAudioMode, onPlaybackStatusUpdate, unloadCurrentSound]
   );
 
   const renderContent = () => {
