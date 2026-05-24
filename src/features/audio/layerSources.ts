@@ -1,15 +1,11 @@
 /**
- * Layer Mixer audio — royalty-free loops that match each layer label.
- * Files live in assets/sounds/layers/ (see ATTRIBUTION.md).
- *
- * Served via jsDelivr from this repo. To self-host on SoundPulse Supabase instead:
- * upload MP3s to a public bucket (e.g. `soundscapes/layers/`) and point URLs there.
+ * Layer Mixer audio — remote loops loaded at runtime from jsDelivr (see /sounds/ in repo).
+ * To add or update a sound: push MP3 to /sounds/ and add an entry here. No app rebuild needed.
  */
-const LAYER_CDN_BASE =
-  "https://cdn.jsdelivr.net/gh/florianbelice4-bit/SoundPulse@master/assets/sounds/layers";
+const BASE = "https://cdn.jsdelivr.net/gh/florianbelice4-bit/SoundPulse@main/sounds/";
 
 function layerUrl(fileName: string): string {
-  return `${LAYER_CDN_BASE}/${encodeURIComponent(fileName)}`;
+  return `${BASE}${encodeURIComponent(fileName)}`;
 }
 
 export type LayerAudioKey =

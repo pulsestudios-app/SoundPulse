@@ -1,6 +1,6 @@
 # Layer Mixer audio attribution
 
-Bundled MP3 loops for the Generate → Layer Mixer. All are used under permissive licenses for app playback.
+Remote MP3 loops for the Generate → Layer Mixer, hosted in `/sounds/` and loaded at runtime via jsDelivr. All are used under permissive licenses for app playback.
 
 | File | Layer | Source |
 |------|-------|--------|
@@ -19,4 +19,4 @@ Bundled MP3 loops for the Generate → Layer Mixer. All are used under permissiv
 
 Noctune: open-source ambient mixer — https://github.com/karthiknvd/noctune
 
-To replace URLs without a new app release, upload equivalents to SoundPulse Supabase public storage and update `src/features/audio/layerSources.ts`.
+To add or replace sounds: commit MP3s to this folder and update `src/features/audio/layerSources.ts`.
