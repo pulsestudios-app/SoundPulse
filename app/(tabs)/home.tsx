@@ -20,6 +20,7 @@ import {
 import { PlaybackTimer } from "@/src/components/audio/PlaybackTimer";
 import { CommunitySoundCard } from "@/src/components/community/CommunitySoundCard";
 import { Screen } from "@/src/components/core/Screen";
+import { layerMixerEngine } from "@/src/features/audio/layerMixerEngine";
 import { libraryPlayer } from "@/src/features/audio/libraryPlayer";
 import { onPlaybackStopped } from "@/src/features/audio/playbackRegistry";
 import { useAuthSession } from "@/src/features/auth/useAuthSession";
@@ -35,6 +36,7 @@ import {
 } from "@/src/features/community/communityApi";
 import { COMMUNITY_CATEGORIES, type CommunityCategoryKey } from "@/src/features/community/categories";
 import { formatPulseCount } from "@/src/features/community/formatPulses";
+import { toggleCommunityMixPlayback } from "@/src/features/community/communityMixPlayback";
 import { isCommunityMix, type CommunitySound } from "@/src/features/community/types";
 import type { SavedLayerSnapshot } from "@/src/features/mixer/layerPresets";
 import { setPendingMixLoad } from "@/src/features/mixer/pendingMixLoad";
@@ -46,7 +48,10 @@ function communityPlaybackId(soundId: string): string {
   return `community:${soundId}`;
 }
 
-function formatDuration(seconds: number | null): string {
+function formatDuration(seconds: number | null, isMix = false): string {
+  if (isMix) {
+    return "Mix";
+  }
   if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0) {
     return "0:00";
   }
@@ -227,6 +232,21 @@ export default function HomeScreen() {
     }
   }, [playingSoundId]);
 
+  const onRemix = useCallback(
+    (sound: CommunitySound) => {
+      const layers = (sound.mix_layers ?? []) as SavedLayerSnapshot[];
+      if (layers.length === 0) {
+        setErrorMessage("This mix could not be loaded.");
+        return;
+      }
+      void layerMixerEngine.stopMix();
+      setPlayingSoundId(null);
+      setPendingMixLoad(layers);
+      router.push("/(tabs)/generate?mode=mixer");
+    },
+    [router]
+  );
+
   const onPlay = useCallback(
     async (sound: CommunitySound) => {
       if (isCommunityMix(sound)) {
@@ -235,13 +255,24 @@ export default function HomeScreen() {
           setErrorMessage("This mix could not be loaded.");
           return;
         }
-        setPendingMixLoad(layers);
-        router.push("/(tabs)/generate?mode=mixer");
+        setLoadingSoundId(sound.id);
+        try {
+          const playing = await toggleCommunityMixPlayback(sound.id, layers, playingSoundId);
+          setPlayingSoundId(playing ? sound.id : null);
+        } catch (e) {
+          setErrorMessage(e instanceof Error ? e.message : "Mix playback failed.");
+          setPlayingSoundId(null);
+        } finally {
+          setLoadingSoundId(null);
+        }
         return;
       }
 
       if (!sound.audio_url) {
         return;
+      }
+      if (layerMixerEngine.isPlaying()) {
+        await layerMixerEngine.stopMix();
       }
       const playbackId = communityPlaybackId(sound.id);
       setLoadingSoundId(sound.id);
@@ -256,7 +287,7 @@ export default function HomeScreen() {
         setLoadingSoundId(null);
       }
     },
-    [router]
+    [playingSoundId]
   );
 
   const onManageOwnSound = useCallback(
@@ -593,6 +624,13 @@ export default function HomeScreen() {
 
   const featuredTitle =
     featured?.title?.trim() || featured?.prompt?.trim() || "Community soundscape";
+  const featuredIsMix = featured ? isCommunityMix(featured) : false;
+  const featuredPlaying = featured ? playingSoundId === featured.id : false;
+  const featuredPlayIcon = featuredPlaying
+    ? "pause"
+    : featuredIsMix
+      ? "layers-outline"
+      : "analytics-outline";
 
   return (
     <Screen>
@@ -641,7 +679,7 @@ export default function HomeScreen() {
                   {featuredTitle}
                 </Text>
                 <Text style={styles.featuredMeta}>
-                  {featured.creatorName} · {formatDuration(featured.duration)}
+                  {featured.creatorName} · {formatDuration(featured.duration, featuredIsMix)}
                 </Text>
                 <Pressable
                   accessibilityRole="button"
@@ -662,17 +700,31 @@ export default function HomeScreen() {
                 <Text style={styles.featuredPulse}>{formatPulseCount(featured.pulseCount)}</Text>
                 <Pressable
                   onPress={() => void onPlay(featured)}
-                  style={styles.featuredPlayBtn}
+                  style={[
+                    styles.featuredPlayBtn,
+                    featuredIsMix && {
+                      borderColor: theme.colors.sky,
+                      backgroundColor: `${theme.colors.sky}14`,
+                    },
+                  ]}
                   accessibilityRole="button"
-                  accessibilityLabel={`Play ${featuredTitle}`}
+                  accessibilityLabel={
+                    featuredIsMix
+                      ? featuredPlaying
+                        ? `Pause mix ${featuredTitle}`
+                        : `Play mix ${featuredTitle}`
+                      : featuredPlaying
+                        ? `Pause ${featuredTitle}`
+                        : `Play ${featuredTitle}`
+                  }
                 >
                   {loadingSoundId === featured.id ? (
-                    <ActivityIndicator color={theme.colors.primary} />
+                    <ActivityIndicator color={featuredIsMix ? theme.colors.sky : theme.colors.primary} />
                   ) : (
                     <Ionicons
-                      name={playingSoundId === featured.id ? "pause" : "play"}
+                      name={featuredPlayIcon}
                       size={28}
-                      color={theme.colors.primary}
+                      color={featuredIsMix ? theme.colors.sky : theme.colors.primary}
                     />
                   )}
                 </Pressable>
@@ -747,6 +799,32 @@ export default function HomeScreen() {
                       Save
                     </Text>
                   </Pressable>
+                  {featuredIsMix ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remix ${featuredTitle}`}
+                      onPress={() => onRemix(featured)}
+                      style={[
+                        styles.featuredActionBtn,
+                        {
+                          borderColor: `${theme.colors.primary}66`,
+                          backgroundColor: `${theme.colors.primary}12`,
+                          alignSelf: "flex-start",
+                        },
+                      ]}
+                    >
+                      <Ionicons name="shuffle" size={18} color={theme.colors.primary} />
+                      <Text
+                        style={{
+                          ...theme.typography.caption,
+                          color: theme.colors.primary,
+                          fontWeight: "700",
+                        }}
+                      >
+                        Remix
+                      </Text>
+                    </Pressable>
+                  ) : null}
                 </View>
               </LinearGradient>
             </View>
@@ -932,6 +1010,7 @@ export default function HomeScreen() {
                     isPremium={isPremium}
                     isOwner={!!userId && sound.user_id === userId}
                     onPlay={() => void onPlay(sound)}
+                    onRemix={() => onRemix(sound)}
                     onPulse={() => void onPulse(sound)}
                     onSave={() => void onSave(sound)}
                     onUpgrade={openUpgrade}
@@ -956,6 +1035,7 @@ export default function HomeScreen() {
                 isPremium={isPremium}
                 isOwner={!!userId && sound.user_id === userId}
                 onPlay={() => void onPlay(sound)}
+                onRemix={() => onRemix(sound)}
                 onPulse={() => void onPulse(sound)}
                 onSave={() => void onSave(sound)}
                 onUpgrade={openUpgrade}

@@ -26,6 +26,7 @@ type CommunitySoundCardProps = {
   isPremium: boolean;
   isOwner?: boolean;
   onPlay: () => void;
+  onRemix?: () => void;
   onPulse: () => void;
   onSave: () => void;
   onUpgrade?: () => void;
@@ -40,6 +41,7 @@ export function CommunitySoundCard({
   isPremium,
   isOwner = false,
   onPlay,
+  onRemix,
   onPulse,
   onSave,
   onUpgrade,
@@ -50,6 +52,13 @@ export function CommunitySoundCard({
   const isMix = isCommunityMix(sound);
   const title = sound.title?.trim() || sound.prompt?.trim() || (isMix ? "Layer mix" : "Community soundscape");
   const durationLabel = formatDuration(sound.duration, isMix);
+  const playIconName = isLoading
+    ? null
+    : isPlaying
+      ? "pause"
+      : isMix
+        ? "layers-outline"
+        : "analytics-outline";
 
   return (
     <View
@@ -65,7 +74,15 @@ export function CommunitySoundCard({
       <View style={{ flexDirection: "row", alignItems: "flex-start", gap: theme.spacing.md }}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={isMix ? `Open mix ${title}` : isPlaying ? `Pause ${title}` : `Play ${title}`}
+          accessibilityLabel={
+            isMix
+              ? isPlaying
+                ? `Pause mix ${title}`
+                : `Play mix ${title}`
+              : isPlaying
+                ? `Pause ${title}`
+                : `Play ${title}`
+          }
           onPress={onPlay}
           disabled={isLoading}
           style={{
@@ -76,24 +93,34 @@ export function CommunitySoundCard({
             justifyContent: "center",
             borderWidth: 1,
             borderColor: isMix
-              ? theme.colors.sky
+              ? isPlaying
+                ? theme.colors.sky
+                : `${theme.colors.sky}88`
               : isPlaying
                 ? theme.colors.sky
                 : `${theme.colors.primary}66`,
             backgroundColor: isMix
-              ? `${theme.colors.sky}1f`
+              ? isPlaying
+                ? `${theme.colors.sky}1f`
+                : `${theme.colors.sky}14`
               : isPlaying
                 ? `${theme.colors.sky}1f`
                 : `${theme.colors.primary}18`,
           }}
         >
-          {isLoading ? (
-            <ActivityIndicator color={theme.colors.sky} />
+          {isLoading || !playIconName ? (
+            <ActivityIndicator color={isMix ? theme.colors.sky : theme.colors.primary} />
           ) : (
             <Ionicons
-              name={isMix ? "layers" : isPlaying ? "pause" : "play"}
+              name={playIconName}
               size={26}
-              color={isMix ? theme.colors.sky : isPlaying ? theme.colors.sky : theme.colors.primary}
+              color={
+                isMix
+                  ? theme.colors.sky
+                  : isPlaying
+                    ? theme.colors.sky
+                    : theme.colors.primary
+              }
             />
           )}
         </Pressable>
@@ -226,6 +253,32 @@ export function CommunitySoundCard({
             Save
           </Text>
         </Pressable>
+
+        {isMix && onRemix ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Remix ${title}`}
+            onPress={onRemix}
+            style={[
+              styles.actionBtn,
+              {
+                borderColor: `${theme.colors.primary}66`,
+                backgroundColor: `${theme.colors.primary}12`,
+              },
+            ]}
+          >
+            <Ionicons name="shuffle" size={18} color={theme.colors.primary} />
+            <Text
+              style={{
+                ...theme.typography.caption,
+                color: theme.colors.primary,
+                fontWeight: "700",
+              }}
+            >
+              Remix
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );
