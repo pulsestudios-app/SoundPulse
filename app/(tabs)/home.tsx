@@ -62,26 +62,11 @@ function patchSound(
   return sounds.map((s) => (s.id === id ? { ...s, ...patch } : s));
 }
 
-const BREATHING_EXERCISES = [
-  { id: "box", title: "Box Breathing", subtitle: "4-4-4-4", icon: "fitness-outline" as const },
-  { id: "478", title: "4-7-8 Breathing", subtitle: "Calm pattern", icon: "leaf-outline" as const },
-  { id: "deep", title: "Deep Relaxation", subtitle: "Slow & steady", icon: "flower-outline" as const },
-  { id: "sleep", title: "Sleep Breathing", subtitle: "Wind down", icon: "moon-outline" as const },
-  { id: "focus", title: "Focus Breathing", subtitle: "Clear mind", icon: "pulse-outline" as const },
-] as const;
-
-const BEDTIME_STORIES = [
-  { id: "cinderella", title: "Cinderella" },
-  { id: "pigs", title: "The Three Little Pigs" },
-  { id: "goldilocks", title: "Goldilocks" },
-  { id: "red-riding-hood", title: "Little Red Riding Hood" },
-  { id: "ugly-duckling", title: "The Ugly Duckling" },
-] as const;
-
-function showComingSoonAlert(title: string) {
-  Alert.alert("Coming soon", `${title} will be available in a future update.`);
-}
-
+import {
+  BEDTIME_STORIES,
+  BREATHING_EXERCISES,
+  showComingSoonAlert,
+} from "@/src/features/discover/placeholders";
 export default function HomeScreen() {
   const theme = useAppTheme();
   const router = useRouter();
@@ -527,6 +512,24 @@ export default function HomeScreen() {
           borderWidth: 1,
           borderColor: theme.colors.primary,
         },
+        viewAllBtn: {
+          width: 108,
+          minHeight: 176,
+          borderRadius: theme.radius.lg,
+          borderWidth: 1,
+          borderColor: `${theme.colors.primary}55`,
+          backgroundColor: `${theme.colors.surface}ee`,
+          alignItems: "center",
+          justifyContent: "center",
+          paddingHorizontal: theme.spacing.md,
+          gap: 6,
+        },
+        viewAllText: {
+          ...theme.typography.caption,
+          color: theme.colors.primary,
+          fontWeight: "800",
+          fontSize: 13,
+        },
       }),
     [scrollBottomPad, theme]
   );
@@ -726,7 +729,7 @@ export default function HomeScreen() {
                       <Text style={styles.placeholderSubtitle} numberOfLines={1}>
                         {item.subtitle}
                       </Text>
-                      <Text style={styles.placeholderDuration}>2 min</Text>
+                      <Text style={styles.placeholderDuration}>{item.duration}</Text>
                     </View>
                     <View style={styles.placeholderPlayBtn} pointerEvents="none">
                       <Ionicons name="play" size={18} color={theme.colors.primary} />
@@ -735,6 +738,15 @@ export default function HomeScreen() {
                 </LinearGradient>
               </Pressable>
             ))}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="View all breathing exercises"
+              onPress={() => router.push("/breathing")}
+              style={styles.viewAllBtn}
+            >
+              <Text style={styles.viewAllText}>View All</Text>
+              <Ionicons name="arrow-forward" size={18} color={theme.colors.primary} />
+            </Pressable>
           </ScrollView>
         </View>
 
@@ -768,7 +780,7 @@ export default function HomeScreen() {
                       <Text style={styles.placeholderTitle} numberOfLines={2}>
                         {item.title}
                       </Text>
-                      <Text style={styles.placeholderDuration}>5 min</Text>
+                      <Text style={styles.placeholderDuration}>{item.duration}</Text>
                     </View>
                     <View
                       style={[
@@ -786,6 +798,21 @@ export default function HomeScreen() {
                 </LinearGradient>
               </Pressable>
             ))}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="View all bedtime stories"
+              onPress={() => router.push("/stories")}
+              style={[
+                styles.viewAllBtn,
+                {
+                  borderColor: `${theme.colors.sky}55`,
+                  backgroundColor: `${theme.colors.surface}ee`,
+                },
+              ]}
+            >
+              <Text style={[styles.viewAllText, { color: theme.colors.sky }]}>View All</Text>
+              <Ionicons name="arrow-forward" size={18} color={theme.colors.sky} />
+            </Pressable>
           </ScrollView>
         </View>
 

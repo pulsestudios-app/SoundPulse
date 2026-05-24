@@ -170,6 +170,8 @@ function RootLayoutInner() {
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="upgrade" />
+        <Stack.Screen name="breathing" />
+        <Stack.Screen name="stories" />
         <Stack.Screen name="creator/[userId]" />
       </Stack>
     </ThemeProvider>
