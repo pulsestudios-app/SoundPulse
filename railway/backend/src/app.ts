@@ -3,6 +3,7 @@ import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import helmet from "helmet";
 
+import { globalIpRateLimit } from "./middleware/globalIpRateLimit.js";
 import { v1Router } from "./routes/v1.js";
 
 const sentryDsn = process.env.SENTRY_DSN?.trim();
@@ -14,6 +15,8 @@ if (sentryDsn) {
 }
 
 export const app = express();
+
+app.set("trust proxy", 1);
 
 app.use(helmet());
 
@@ -49,6 +52,9 @@ const corsOptions: cors.CorsOptions = {
 
 app.use(cors(corsOptions));
 app.use(express.json({ limit: "10mb" }));
+// 100 req/min per IP on all Railway routes. Supabase PostgREST is called directly by
+// the mobile client (not proxied here), so database API rate limits belong in Supabase.
+app.use(globalIpRateLimit);
 
 function validateAppKey(req: Request, res: Response, next: NextFunction): void {
   const expectedKey = process.env.APP_SECRET_KEY?.trim();

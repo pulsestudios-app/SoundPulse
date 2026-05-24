@@ -2,6 +2,7 @@ import express, { type Request, type Response } from "express";
 
 import { supabaseAdmin } from "../lib/supabaseAdmin.js";
 import { authenticateUser } from "../middleware/authenticateUser.js";
+import { accountDeleteRateLimit } from "../middleware/userRateLimit.js";
 import { authRouter } from "./auth.js";
 import { billingRouter } from "./billing.js";
 import { soundsRouter } from "./sounds.js";
@@ -20,7 +21,7 @@ v1Router.use("/auth", authRouter);
 v1Router.use("/billing", billingRouter);
 v1Router.use("/sounds", soundsRouter);
 
-v1Router.delete("/account", authenticateUser, async (req: Request, res: Response) => {
+v1Router.delete("/account", authenticateUser, accountDeleteRateLimit, async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {

@@ -1,6 +1,7 @@
 import express, { type Request, type Response } from "express";
 
 import { authenticateUser } from "../middleware/authenticateUser.js";
+import { billingRestoreRateLimit, billingVerifyRateLimit } from "../middleware/userRateLimit.js";
 import {
   PlayBillingConfigError,
   PlayPurchaseVerificationError,
@@ -45,7 +46,7 @@ function sendBillingError(res: Response, status: number, code: string, message: 
   res.status(status).json({ error: { code, message }, ...extra });
 }
 
-billingRouter.post("/play/verify", authenticateUser, async (req: Request, res: Response) => {
+billingRouter.post("/play/verify", authenticateUser, billingVerifyRateLimit, async (req: Request, res: Response) => {
   const userId = req.user?.id;
   if (!userId) {
     sendBillingError(res, 401, "UNAUTHORIZED", "Unauthorized");
@@ -80,7 +81,7 @@ billingRouter.post("/play/verify", authenticateUser, async (req: Request, res: R
   }
 });
 
-billingRouter.post("/play/restore", authenticateUser, async (req: Request, res: Response) => {
+billingRouter.post("/play/restore", authenticateUser, billingRestoreRateLimit, async (req: Request, res: Response) => {
   const userId = req.user?.id;
   if (!userId) {
     sendBillingError(res, 401, "UNAUTHORIZED", "Unauthorized");
