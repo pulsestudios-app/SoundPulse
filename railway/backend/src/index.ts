@@ -2,6 +2,12 @@ import "dotenv/config";
 
 import { app } from "./app.js";
 
+const isProduction = process.env.NODE_ENV === "production";
+if (isProduction && !process.env.APP_SECRET_KEY?.trim()) {
+  console.error("[SoundPulse] APP_SECRET_KEY is required when NODE_ENV=production");
+  process.exit(1);
+}
+
 console.log("[SoundPulse] Starting server...");
 
 try {

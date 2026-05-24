@@ -52,6 +52,11 @@ app.use(express.json({ limit: "10mb" }));
 
 function validateAppKey(req: Request, res: Response, next: NextFunction): void {
   const expectedKey = process.env.APP_SECRET_KEY?.trim();
+  const isProduction = process.env.NODE_ENV === "production";
+  if (isProduction && !expectedKey) {
+    res.status(503).json({ error: "Server misconfigured" });
+    return;
+  }
   if (!expectedKey) {
     next();
     return;

@@ -1,6 +1,7 @@
 import express, { type Request, type Response } from "express";
 
 import { authenticateUser } from "../middleware/authenticateUser.js";
+import { generateRateLimit } from "../middleware/generateRateLimit.js";
 import {
   ElevenLabsConfigError,
   ElevenLabsGenerationError,
@@ -28,7 +29,7 @@ function clampDuration(raw: unknown): number {
   return Math.min(MAX_DURATION_SEC, Math.max(MIN_DURATION_SEC, n));
 }
 
-soundsRouter.post("/generate", authenticateUser, async (req: Request, res: Response) => {
+soundsRouter.post("/generate", authenticateUser, generateRateLimit, async (req: Request, res: Response) => {
   try {
     const authUserId = req.user?.id;
     if (!authUserId) {

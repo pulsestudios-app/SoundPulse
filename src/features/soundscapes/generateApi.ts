@@ -22,6 +22,7 @@ const GENERATION_ERROR_MESSAGES: Record<string, string> = {
   GENERATION_LIMIT_REACHED:
     "You've used all your AI generations this month. Upgrade to generate more.",
   PAID_PLAN_REQUIRED: "AI generation requires a paid plan. Upgrade to start generating sounds.",
+  RATE_LIMIT_EXCEEDED: "Too many generation requests. Please wait a minute and try again.",
 };
 
 function messageForGenerationError(code: string): string {
@@ -61,7 +62,12 @@ export async function generateSoundscape(
   }
 
   if (!res.ok) {
-    const code = typeof parsed.error === "string" ? parsed.error : undefined;
+    const code =
+      typeof parsed.error === "string"
+        ? parsed.error
+        : res.status === 429
+          ? "RATE_LIMIT_EXCEEDED"
+          : undefined;
     const message = code ? messageForGenerationError(code) : text || `Request failed (${res.status})`;
     throw new GenerateSoundscapeError(message, res.status, code);
   }

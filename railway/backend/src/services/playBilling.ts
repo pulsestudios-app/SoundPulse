@@ -149,6 +149,15 @@ async function verifyOneTimeProductPurchase(
   }
 }
 
+function subscriptionExpiresAt(tier: PlanTier): string {
+  if (tier === "lifetime") {
+    return "2099-01-01T00:00:00.000Z";
+  }
+  const expires = new Date();
+  expires.setUTCDate(expires.getUTCDate() + 32);
+  return expires.toISOString();
+}
+
 export async function applyVerifiedTierToProfile(userId: string, tier: PlanTier): Promise<void> {
   const { error } = await supabaseAdmin
     .from("profiles")
@@ -162,6 +171,17 @@ export async function applyVerifiedTierToProfile(userId: string, tier: PlanTier)
 
   if (error) {
     throw new Error(`Failed to update profile: ${error.message}`);
+  }
+
+  const { error: subscriptionError } = await supabaseAdmin.from("subscriptions").insert({
+    user_id: userId,
+    plan: tier,
+    status: "active",
+    expires_at: subscriptionExpiresAt(tier),
+  });
+
+  if (subscriptionError) {
+    throw new Error(`Failed to record subscription: ${subscriptionError.message}`);
   }
 
   if (tier === "lifetime") {

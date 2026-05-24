@@ -24,7 +24,7 @@ if (typeof sentryDsn === "string" && sentryDsn.length > 0) {
   Sentry.init({
     dsn: sentryDsn,
     enabled: !__DEV__,
-    sendDefaultPii: true,
+    sendDefaultPii: false,
   });
 }
 

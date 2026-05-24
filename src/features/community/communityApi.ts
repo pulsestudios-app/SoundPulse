@@ -13,7 +13,7 @@ import type {
 const PAGE_SIZE = 10;
 
 type PulseRow = { sound_id: string; created_at: string | null };
-type ProfileRow = { id: string; display_name: string | null; email: string | null; avatar_url: string | null };
+type PublicProfileRow = { id: string; display_name: string | null; avatar_url: string | null };
 
 function twentyFourHoursAgoIso(): string {
   return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -29,14 +29,10 @@ function startOfCurrentWeekIso(): string {
   return monday.toISOString();
 }
 
-function fallbackCreatorName(profile: ProfileRow | undefined, userId: string): string {
+function fallbackCreatorName(profile: PublicProfileRow | undefined, userId: string): string {
   const display = profile?.display_name?.trim();
   if (display) {
     return display;
-  }
-  const email = profile?.email?.trim();
-  if (email) {
-    return email.split("@")[0] ?? "Creator";
   }
   return `Creator ${userId.slice(0, 6)}`;
 }
@@ -110,11 +106,11 @@ async function enrichCommunitySounds(
   const [{ pulseCounts, pulses24h }, { pulsed, saved }, profilesResult] = await Promise.all([
     fetchPulseStats(soundIds),
     fetchUserPulseSaveState(userId, soundIds),
-    supabase.from("profiles").select("id, display_name, email, avatar_url").in("id", userIds),
+    supabase.from("profiles_public").select("id, display_name, avatar_url").in("id", userIds),
   ]);
 
-  const profileMap = new Map<string, ProfileRow>();
-  for (const profile of (profilesResult.data ?? []) as ProfileRow[]) {
+  const profileMap = new Map<string, PublicProfileRow>();
+  for (const profile of (profilesResult.data ?? []) as PublicProfileRow[]) {
     profileMap.set(profile.id, profile);
   }
 
@@ -419,8 +415,8 @@ export async function fetchCreatorProfile(
 ): Promise<CreatorProfile> {
   const [profileResult, soundsResult] = await Promise.all([
     supabase
-      .from("profiles")
-      .select("id, display_name, email, avatar_url")
+      .from("profiles_public")
+      .select("id, display_name, avatar_url")
       .eq("id", creatorId)
       .maybeSingle(),
     supabase
@@ -439,7 +435,7 @@ export async function fetchCreatorProfile(
     throw new Error(soundsResult.error.message);
   }
 
-  const profile = profileResult.data as ProfileRow | null;
+  const profile = profileResult.data as PublicProfileRow | null;
   const soundRows = (soundsResult.data ?? []) as CommunitySoundRow[];
   const soundIds = soundRows.map((row) => row.id);
 
@@ -460,7 +456,7 @@ export async function fetchCreatorProfile(
   return {
     userId: creatorId,
     displayName: fallbackCreatorName(profile ?? undefined, creatorId),
-    email: profile?.email?.trim() || null,
+    email: null,
     avatarUrl: profile?.avatar_url?.trim() || null,
     soundsShared: soundRows.length,
     totalPulses,

@@ -21,7 +21,7 @@ export function validateDisplayName(value: string): string | null {
 export async function isDisplayNameTaken(name: string, userId: string): Promise<boolean> {
   const normalized = normalizeDisplayName(name);
   const { data, error } = await supabase
-    .from("profiles")
+    .from("profiles_public")
     .select("id")
     .ilike("display_name", normalized)
     .neq("id", userId)

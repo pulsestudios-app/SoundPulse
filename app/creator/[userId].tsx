@@ -397,7 +397,6 @@ export default function CreatorProfileScreen() {
                 size={72}
               />
               <Text style={styles.name}>{profile.displayName}</Text>
-              {profile.email ? <Text style={styles.email}>{profile.email}</Text> : null}
 
               <View style={styles.statsRow}>
                 <View style={styles.statTile}>
