@@ -343,6 +343,48 @@ export async function reportCommunitySound(
   }
 }
 
+export async function fetchSavedCommunitySounds(userId: string): Promise<CommunitySound[]> {
+  const { data: saves, error: savesError } = await supabase
+    .from("sound_saves")
+    .select("sound_id, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (savesError) {
+    throw new Error(savesError.message);
+  }
+
+  const soundIds: string[] = [];
+  for (const row of saves ?? []) {
+    if (typeof row.sound_id === "string") {
+      soundIds.push(row.sound_id);
+    }
+  }
+
+  if (soundIds.length === 0) {
+    return [];
+  }
+
+  const { data: sounds, error: soundsError } = await supabase
+    .from("community_sounds")
+    .select("*")
+    .in("id", soundIds)
+    .eq("is_public", true)
+    .eq("is_hidden", false);
+
+  if (soundsError) {
+    throw new Error(soundsError.message);
+  }
+
+  const orderMap = new Map(soundIds.map((id, index) => [id, index]));
+  const rows = ((sounds ?? []) as CommunitySoundRow[]).sort(
+    (a, b) => (orderMap.get(a.id) ?? 0) - (orderMap.get(b.id) ?? 0)
+  );
+
+  const enriched = await enrichCommunitySounds(rows, userId);
+  return enriched.map((sound) => ({ ...sound, hasSaved: true }));
+}
+
 export async function fetchCreatorProfile(
   creatorId: string,
   viewerId?: string

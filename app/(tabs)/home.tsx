@@ -2,10 +2,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -15,7 +17,6 @@ import {
 } from "react-native";
 
 import { PlaybackTimer } from "@/src/components/audio/PlaybackTimer";
-import { Button } from "@/src/components/core/Button";
 import { CommunitySoundCard } from "@/src/components/community/CommunitySoundCard";
 import { Screen } from "@/src/components/core/Screen";
 import { libraryPlayer } from "@/src/features/audio/libraryPlayer";
@@ -112,6 +113,7 @@ export default function HomeScreen() {
 
   const [playingSoundId, setPlayingSoundId] = useState<string | null>(null);
   const [loadingSoundId, setLoadingSoundId] = useState<string | null>(null);
+  const loadingMoreRef = useRef(false);
 
   useEffect(() => {
     return onPlaybackStopped(() => {
@@ -184,16 +186,31 @@ export default function HomeScreen() {
   );
 
   const onLoadMore = useCallback(() => {
-    if (loadingMore || !hasMore || loadingInitial) {
+    if (loadingMoreRef.current || loadingMore || !hasMore || loadingInitial) {
       return;
     }
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     void loadFeedPage(page + 1, selectedCategory, false)
       .catch((e) => {
         setErrorMessage(e instanceof Error ? e.message : "Could not load more sounds.");
       })
-      .finally(() => setLoadingMore(false));
+      .finally(() => {
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      });
   }, [hasMore, loadFeedPage, loadingInitial, loadingMore, page, selectedCategory]);
+
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+      const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+      if (distanceFromBottom < 240) {
+        onLoadMore();
+      }
+    },
+    [onLoadMore]
+  );
 
   const removeSoundFromLists = useCallback((soundId: string) => {
     setFeed((prev) => prev.filter((sound) => sound.id !== soundId));
@@ -425,7 +442,8 @@ export default function HomeScreen() {
         },
         loadMoreWrap: {
           alignItems: "center",
-          paddingVertical: theme.spacing.sm,
+          paddingVertical: theme.spacing.md,
+          minHeight: 48,
         },
         placeholderScroll: {
           gap: theme.spacing.md,
@@ -527,6 +545,8 @@ export default function HomeScreen() {
       <ScrollView
         contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollBottomPad }]}
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={200}
+        onScroll={handleScroll}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -825,14 +845,12 @@ export default function HomeScreen() {
           {!loadingInitial && feed.length === 0 ? (
             <Text style={styles.empty}>No community sounds in this category yet.</Text>
           ) : null}
-          {hasMore && feed.length > 0 ? (
+          {loadingMore ? (
             <View style={styles.loadMoreWrap}>
-              <Button
-                variant="secondary"
-                label={loadingMore ? "Loading…" : "Load more"}
-                disabled={loadingMore}
-                onPress={onLoadMore}
-              />
+              <ActivityIndicator color={theme.colors.primary} size="small" />
+              <Text style={{ ...theme.typography.caption, color: theme.colors.textSecondary, marginTop: 8 }}>
+                Loading more sounds…
+              </Text>
             </View>
           ) : null}
         </View>

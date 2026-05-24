@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -11,13 +12,24 @@ import {
 } from "react-native";
 
 import { PlaybackTimer } from "@/src/components/audio/PlaybackTimer";
+import { CommunitySoundCard } from "@/src/components/community/CommunitySoundCard";
 import { Screen } from "@/src/components/core/Screen";
 import { libraryPlayer } from "@/src/features/audio/libraryPlayer";
 import { onPlaybackStopped } from "@/src/features/audio/playbackRegistry";
 import { useAuthSession } from "@/src/features/auth/useAuthSession";
+import {
+  fetchSavedCommunitySounds,
+  toggleCommunitySave,
+} from "@/src/features/community/communityApi";
+import { isCommunityMix, type CommunitySound } from "@/src/features/community/types";
+import type { SavedLayerSnapshot } from "@/src/features/mixer/layerPresets";
+import { setPendingMixLoad } from "@/src/features/mixer/pendingMixLoad";
+import { useIsPremium } from "@/src/features/subscription/useIsPremium";
 import { useScrollContentBottomPad } from "@/src/hooks/useScrollBottomInset";
 import { supabase } from "@/src/lib/supabase";
 import { useAppTheme } from "@/src/theme";
+
+type LibraryTab = "my" | "saved";
 
 type GeneratedSoundRow = {
   id: string;
@@ -28,6 +40,10 @@ type GeneratedSoundRow = {
   prompt: string | null;
   created_at: string | null;
 };
+
+function communityPlaybackId(soundId: string): string {
+  return `community:${soundId}`;
+}
 
 function formatDuration(seconds: number | null): string {
   if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0) {
@@ -68,11 +84,17 @@ function soundTitle(sound: GeneratedSoundRow): string {
 
 export default function LibraryScreen() {
   const theme = useAppTheme();
+  const router = useRouter();
   const scrollBottomPad = useScrollContentBottomPad(28);
   const { session } = useAuthSession();
+  const { isPremium } = useIsPremium();
+  const userId = session?.user?.id;
 
+  const [activeTab, setActiveTab] = useState<LibraryTab>("my");
   const [sounds, setSounds] = useState<GeneratedSoundRow[]>([]);
+  const [savedSounds, setSavedSounds] = useState<CommunitySound[]>([]);
   const [loading, setLoading] = useState(true);
+  const [savedLoading, setSavedLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeSoundId, setActiveSoundId] = useState<string | null>(null);
@@ -98,6 +120,36 @@ export default function LibraryScreen() {
           ...theme.typography.body,
           color: theme.colors.textSecondary,
           lineHeight: 22,
+        },
+        tabRow: {
+          flexDirection: "row",
+          gap: theme.spacing.sm,
+          backgroundColor: theme.colors.surface,
+          padding: theme.spacing.sm,
+          borderRadius: theme.radius.lg,
+          borderWidth: 1,
+          borderColor: `${theme.colors.primary}44`,
+        },
+        tabPill: {
+          flex: 1,
+          paddingVertical: 10,
+          borderRadius: theme.radius.md,
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        tabPillActive: {
+          backgroundColor: `${theme.colors.primary}37`,
+          borderWidth: 1,
+          borderColor: theme.colors.sky,
+        },
+        tabText: {
+          ...theme.typography.body,
+          color: theme.colors.textSecondary,
+          fontWeight: "700",
+          fontSize: 14,
+        },
+        tabTextActive: {
+          color: theme.colors.textPrimary,
         },
         list: {
           gap: theme.spacing.md,
@@ -221,7 +273,6 @@ export default function LibraryScreen() {
 
   const loadSounds = useCallback(
     async ({ showInitialLoading }: { showInitialLoading: boolean }) => {
-      const userId = session?.user?.id;
       if (!userId) {
         setSounds([]);
         setLoading(false);
@@ -251,19 +302,55 @@ export default function LibraryScreen() {
         setLoading(false);
       }
     },
-    [session?.user?.id]
+    [userId]
+  );
+
+  const loadSavedSounds = useCallback(
+    async ({ showInitialLoading }: { showInitialLoading: boolean }) => {
+      if (!userId) {
+        setSavedSounds([]);
+        setSavedLoading(false);
+        return;
+      }
+
+      if (showInitialLoading) {
+        setSavedLoading(true);
+      }
+      setErrorMessage(null);
+
+      try {
+        const rows = await fetchSavedCommunitySounds(userId);
+        setSavedSounds(rows);
+      } catch (e) {
+        setErrorMessage(e instanceof Error ? e.message : "Could not load saved sounds.");
+        setSavedSounds([]);
+      } finally {
+        if (showInitialLoading) {
+          setSavedLoading(false);
+        }
+      }
+    },
+    [userId]
   );
 
   useEffect(() => {
-    void loadSounds({ showInitialLoading: true });
-  }, [loadSounds]);
+    if (activeTab === "my") {
+      void loadSounds({ showInitialLoading: true });
+    } else {
+      void loadSavedSounds({ showInitialLoading: true });
+    }
+  }, [activeTab, loadSavedSounds, loadSounds]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    loadSounds({ showInitialLoading: false }).finally(() => setRefreshing(false));
-  }, [loadSounds]);
+    const task =
+      activeTab === "my"
+        ? loadSounds({ showInitialLoading: false })
+        : loadSavedSounds({ showInitialLoading: false });
+    task.finally(() => setRefreshing(false));
+  }, [activeTab, loadSavedSounds, loadSounds]);
 
-  const playSound = useCallback(async (sound: GeneratedSoundRow) => {
+  const playGeneratedSound = useCallback(async (sound: GeneratedSoundRow) => {
     if (!sound.url) {
       setErrorMessage("This sound does not have a playable URL yet.");
       return;
@@ -288,12 +375,70 @@ export default function LibraryScreen() {
     }
   }, []);
 
-  const renderContent = () => {
+  const playCommunitySound = useCallback(
+    async (sound: CommunitySound) => {
+      if (isCommunityMix(sound)) {
+        const layers = (sound.mix_layers ?? []) as SavedLayerSnapshot[];
+        if (layers.length === 0) {
+          setErrorMessage("This mix could not be loaded.");
+          return;
+        }
+        setPendingMixLoad(layers);
+        router.push("/(tabs)/generate?mode=mixer");
+        return;
+      }
+
+      if (!sound.audio_url) {
+        return;
+      }
+
+      setErrorMessage(null);
+      setLoadingSoundId(sound.id);
+      try {
+        const { playing } = await libraryPlayer.toggle(
+          communityPlaybackId(sound.id),
+          sound.audio_url,
+          () => {
+            setPlayingSoundId(null);
+            setActiveSoundId(null);
+          }
+        );
+        setActiveSoundId(playing ? sound.id : libraryPlayer.getActiveSoundId());
+        setPlayingSoundId(playing ? sound.id : null);
+      } catch (e) {
+        setErrorMessage(e instanceof Error ? e.message : "Could not play this sound.");
+        setPlayingSoundId(null);
+        setActiveSoundId(null);
+      } finally {
+        setLoadingSoundId(null);
+      }
+    },
+    [router]
+  );
+
+  const onUnsaveCommunitySound = useCallback(
+    async (sound: CommunitySound) => {
+      if (!userId) {
+        return;
+      }
+      try {
+        const saved = await toggleCommunitySave(userId, sound);
+        if (!saved) {
+          setSavedSounds((prev) => prev.filter((row) => row.id !== sound.id));
+        }
+      } catch (e) {
+        setErrorMessage(e instanceof Error ? e.message : "Could not unsave sound.");
+      }
+    },
+    [userId]
+  );
+
+  const renderMySounds = () => {
     if (loading) {
       return (
         <View style={styles.centeredState}>
           <ActivityIndicator color={theme.colors.primary} size="large" />
-          <Text style={styles.stateBody}>Loading your saved sounds...</Text>
+          <Text style={styles.stateBody}>Loading your sounds...</Text>
         </View>
       );
     }
@@ -304,18 +449,16 @@ export default function LibraryScreen() {
           <View style={styles.emptyIconWrap}>
             <Ionicons name="musical-notes" size={36} color={theme.colors.primary} />
           </View>
-          <Text style={styles.stateTitle}>No saved sounds yet</Text>
+          <Text style={styles.stateTitle}>No sounds yet</Text>
           <Text style={styles.stateBody}>
             Generated soundscapes you save will appear here for replay.
           </Text>
-          {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
         </View>
       );
     }
 
     return (
       <View style={styles.list}>
-        {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
         {sounds.map((sound) => {
           const isPlaying = playingSoundId === sound.id;
           const isLoadingSound = loadingSoundId === sound.id;
@@ -347,7 +490,7 @@ export default function LibraryScreen() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`${isPlaying ? "Pause" : "Play"} ${title}`}
-                onPress={() => void playSound(sound)}
+                onPress={() => void playGeneratedSound(sound)}
                 disabled={isLoadingSound}
                 style={({ pressed }) => [
                   styles.playButton,
@@ -373,6 +516,55 @@ export default function LibraryScreen() {
     );
   };
 
+  const renderSavedSounds = () => {
+    if (savedLoading) {
+      return (
+        <View style={styles.centeredState}>
+          <ActivityIndicator color={theme.colors.primary} size="large" />
+          <Text style={styles.stateBody}>Loading saved community sounds...</Text>
+        </View>
+      );
+    }
+
+    if (savedSounds.length === 0) {
+      return (
+        <View style={styles.centeredState}>
+          <View style={styles.emptyIconWrap}>
+            <Ionicons name="bookmark-outline" size={36} color={theme.colors.sky} />
+          </View>
+          <Text style={styles.stateTitle}>No saved sounds yet</Text>
+          <Text style={styles.stateBody}>
+            Save soundscapes from Discover to find them here.
+          </Text>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.list}>
+        {savedSounds.map((sound) => (
+          <CommunitySoundCard
+            key={sound.id}
+            sound={sound}
+            isPlaying={playingSoundId === sound.id}
+            isLoading={loadingSoundId === sound.id}
+            isPremium={isPremium}
+            onPlay={() => void playCommunitySound(sound)}
+            onPulse={() => router.push("/upgrade")}
+            onSave={() => void onUnsaveCommunitySound(sound)}
+            onUpgrade={() => router.push("/upgrade")}
+            onViewProfile={() => router.push(`/creator/${sound.user_id}`)}
+          />
+        ))}
+      </View>
+    );
+  };
+
+  const intro =
+    activeTab === "my"
+      ? "Replay the AI soundscapes you have generated."
+      : "Community soundscapes you saved from Discover.";
+
   return (
     <Screen>
       <ScrollView
@@ -389,12 +581,33 @@ export default function LibraryScreen() {
       >
         <View style={styles.header}>
           <Text style={styles.title}>Library</Text>
-          <Text style={styles.intro}>Replay the AI soundscapes you have saved.</Text>
+          <Text style={styles.intro}>{intro}</Text>
+        </View>
+
+        <View style={styles.tabRow}>
+          <Pressable
+            onPress={() => setActiveTab("my")}
+            style={[styles.tabPill, activeTab === "my" && styles.tabPillActive]}
+            accessibilityRole="button"
+            accessibilityLabel="My Sounds"
+          >
+            <Text style={[styles.tabText, activeTab === "my" && styles.tabTextActive]}>My Sounds</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setActiveTab("saved")}
+            style={[styles.tabPill, activeTab === "saved" && styles.tabPillActive]}
+            accessibilityRole="button"
+            accessibilityLabel="Saved"
+          >
+            <Text style={[styles.tabText, activeTab === "saved" && styles.tabTextActive]}>Saved</Text>
+          </Pressable>
         </View>
 
         <PlaybackTimer isPlaying={!!playingSoundId} />
 
-        {renderContent()}
+        {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+
+        {activeTab === "my" ? renderMySounds() : renderSavedSounds()}
       </ScrollView>
     </Screen>
   );
