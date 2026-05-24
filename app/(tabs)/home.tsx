@@ -3,6 +3,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { BreathingVoice } from "@/src/features/discover/breathingVoicePrefs";
 import {
   ActivityIndicator,
   Alert,
@@ -26,6 +27,7 @@ import {
   COMMUNITY_PAGE_SIZE,
   deleteCommunitySoundCompletely,
   fetchCommunityFeedPage,
+  fetchCommunitySoundsNewToday,
   fetchFeaturedCommunitySound,
   removeCommunitySoundFromDiscover,
   toggleCommunityPulse,
@@ -62,6 +64,11 @@ function patchSound(
   return sounds.map((s) => (s.id === id ? { ...s, ...patch } : s));
 }
 
+import { BreathingVoiceToggle } from "@/src/features/discover/BreathingVoiceToggle";
+import {
+  loadBreathingVoices,
+  setBreathingVoice,
+} from "@/src/features/discover/breathingVoicePrefs";
 import {
   BEDTIME_STORIES,
   BREATHING_EXERCISES,
@@ -76,7 +83,9 @@ export default function HomeScreen() {
   const userId = session?.user?.id;
 
   const [featured, setFeatured] = useState<CommunitySound | null>(null);
+  const [newToday, setNewToday] = useState<CommunitySound[]>([]);
   const [feed, setFeed] = useState<CommunitySound[]>([]);
+  const [breathingVoices, setBreathingVoices] = useState<Record<string, BreathingVoice>>({});
   const [selectedCategory, setSelectedCategory] = useState<CommunityCategoryKey | null>(null);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
@@ -106,6 +115,15 @@ export default function HomeScreen() {
     });
   }, []);
 
+  useEffect(() => {
+    void loadBreathingVoices(BREATHING_EXERCISES.map((item) => item.id)).then(setBreathingVoices);
+  }, []);
+
+  const onBreathingVoiceChange = useCallback((exerciseId: string, voice: BreathingVoice) => {
+    setBreathingVoices((prev) => ({ ...prev, [exerciseId]: voice }));
+    void setBreathingVoice(exerciseId, voice);
+  }, []);
+
   const loadFeedPage = useCallback(
     async (nextPage: number, category: CommunityCategoryKey | null, replace: boolean) => {
       const rows = await fetchCommunityFeedPage({
@@ -125,11 +143,13 @@ export default function HomeScreen() {
   const loadDiscover = useCallback(
     async (category: CommunityCategoryKey | null, replaceFeed: boolean) => {
       setErrorMessage(null);
-      const [featuredSound] = await Promise.all([
+      const [featuredSound, todaySounds] = await Promise.all([
         fetchFeaturedCommunitySound(userId),
+        fetchCommunitySoundsNewToday(userId),
         loadFeedPage(0, category, replaceFeed),
       ]);
       setFeatured(featuredSound);
+      setNewToday(todaySounds);
     },
     [loadFeedPage, userId]
   );
@@ -141,6 +161,7 @@ export default function HomeScreen() {
         .catch((e) => {
           setErrorMessage(e instanceof Error ? e.message : "Could not load community sounds.");
           setFeatured(null);
+          setNewToday([]);
           setFeed([]);
         })
         .finally(() => setLoadingInitial(false));
@@ -199,6 +220,7 @@ export default function HomeScreen() {
 
   const removeSoundFromLists = useCallback((soundId: string) => {
     setFeed((prev) => prev.filter((sound) => sound.id !== soundId));
+    setNewToday((prev) => prev.filter((sound) => sound.id !== soundId));
     setFeatured((prev) => (prev?.id === soundId ? null : prev));
     if (playingSoundId === soundId) {
       setPlayingSoundId(null);
@@ -286,6 +308,7 @@ export default function HomeScreen() {
           pulses24h: Math.max(0, sound.pulses24h + delta),
         };
         setFeed((prev) => patchSound(prev, sound.id, patch));
+        setNewToday((prev) => patchSound(prev, sound.id, patch));
         setFeatured((prev) => (prev?.id === sound.id ? { ...prev, ...patch } : prev));
       } catch (e) {
         setErrorMessage(e instanceof Error ? e.message : "Could not pulse sound.");
@@ -304,6 +327,7 @@ export default function HomeScreen() {
         const saved = await toggleCommunitySave(userId, sound);
         const patch = { hasSaved: saved };
         setFeed((prev) => patchSound(prev, sound.id, patch));
+        setNewToday((prev) => patchSound(prev, sound.id, patch));
         setFeatured((prev) => (prev?.id === sound.id ? { ...prev, ...patch } : prev));
       } catch (e) {
         setErrorMessage(e instanceof Error ? e.message : "Could not save sound.");
@@ -549,6 +573,14 @@ export default function HomeScreen() {
           fontWeight: "800",
           fontSize: 13,
         },
+        newTodayScroll: {
+          gap: theme.spacing.md,
+          paddingVertical: theme.spacing.xs,
+          paddingRight: theme.spacing.md,
+        },
+        newTodayCardWrap: {
+          width: 300,
+        },
       }),
     [scrollBottomPad, theme]
   );
@@ -604,7 +636,7 @@ export default function HomeScreen() {
                 end={{ x: 1, y: 1 }}
                 style={styles.featuredGradient}
               >
-                <Text style={styles.featuredEyebrow}>Most pulsed · 24h</Text>
+                <Text style={styles.featuredEyebrow}>Most pulsed · this week</Text>
                 <Text style={styles.featuredTitle} numberOfLines={2}>
                   {featuredTitle}
                 </Text>
@@ -727,42 +759,51 @@ export default function HomeScreen() {
         <View>
           <Text style={styles.sectionLabel}>Breathing Exercises</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.placeholderScroll}>
-            {BREATHING_EXERCISES.map((item) => (
-              <Pressable
-                key={item.id}
-                accessibilityRole="button"
-                accessibilityLabel={`${item.title}, 2 minutes`}
-                onPress={() => showComingSoonAlert(item.title)}
-                style={styles.placeholderCardOuter}
-              >
-                <LinearGradient
-                  colors={[`${theme.colors.primary}88`, `${theme.colors.sky}55`, `${theme.colors.primary}33`]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.placeholderCardGradient}
-                >
-                  <View style={styles.placeholderCard}>
-                    <View style={styles.placeholderCardTop}>
-                      <View style={styles.placeholderIconWrap}>
-                        <Ionicons name={item.icon} size={20} color={theme.colors.primary} />
-                      </View>
+            {BREATHING_EXERCISES.map((item) => {
+              const voice = breathingVoices[item.id] ?? item.defaultVoice;
+              return (
+                <View key={item.id} style={styles.placeholderCardOuter}>
+                  <LinearGradient
+                    colors={[`${theme.colors.primary}88`, `${theme.colors.sky}55`, `${theme.colors.primary}33`]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.placeholderCardGradient}
+                  >
+                    <View style={styles.placeholderCard}>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`${item.title}, 2 minutes`}
+                        onPress={() => showComingSoonAlert(item.title)}
+                        style={{ flex: 1, gap: theme.spacing.sm }}
+                      >
+                        <View style={styles.placeholderCardTop}>
+                          <View style={styles.placeholderIconWrap}>
+                            <Ionicons name={item.icon} size={20} color={theme.colors.primary} />
+                          </View>
+                        </View>
+                        <View style={{ gap: 4 }}>
+                          <Text style={styles.placeholderTitle} numberOfLines={2}>
+                            {item.title}
+                          </Text>
+                          <Text style={styles.placeholderSubtitle} numberOfLines={1}>
+                            {item.subtitle}
+                          </Text>
+                          <Text style={styles.placeholderDuration}>{item.duration}</Text>
+                        </View>
+                        <View style={styles.placeholderPlayBtn} pointerEvents="none">
+                          <Ionicons name="play" size={18} color={theme.colors.primary} />
+                        </View>
+                      </Pressable>
+                      <BreathingVoiceToggle
+                        compact
+                        value={voice}
+                        onChange={(next) => onBreathingVoiceChange(item.id, next)}
+                      />
                     </View>
-                    <View style={{ gap: 4 }}>
-                      <Text style={styles.placeholderTitle} numberOfLines={2}>
-                        {item.title}
-                      </Text>
-                      <Text style={styles.placeholderSubtitle} numberOfLines={1}>
-                        {item.subtitle}
-                      </Text>
-                      <Text style={styles.placeholderDuration}>{item.duration}</Text>
-                    </View>
-                    <View style={styles.placeholderPlayBtn} pointerEvents="none">
-                      <Ionicons name="play" size={18} color={theme.colors.primary} />
-                    </View>
-                  </View>
-                </LinearGradient>
-              </Pressable>
-            ))}
+                  </LinearGradient>
+                </View>
+              );
+            })}
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="View all breathing exercises"
@@ -873,6 +914,35 @@ export default function HomeScreen() {
             })}
           </ScrollView>
         </View>
+
+        {newToday.length > 0 ? (
+          <View>
+            <Text style={styles.sectionLabel}>New today</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.newTodayScroll}
+            >
+              {newToday.map((sound) => (
+                <View key={sound.id} style={styles.newTodayCardWrap}>
+                  <CommunitySoundCard
+                    sound={sound}
+                    isPlaying={playingSoundId === sound.id}
+                    isLoading={loadingSoundId === sound.id}
+                    isPremium={isPremium}
+                    isOwner={!!userId && sound.user_id === userId}
+                    onPlay={() => void onPlay(sound)}
+                    onPulse={() => void onPulse(sound)}
+                    onSave={() => void onSave(sound)}
+                    onUpgrade={openUpgrade}
+                    onViewProfile={() => openCreatorProfile(sound.user_id)}
+                    onManageOwn={() => onManageOwnSound(sound)}
+                  />
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
 
         <View>
           <Text style={styles.sectionLabel}>Trending · last 24 hours</Text>

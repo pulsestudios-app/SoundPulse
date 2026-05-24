@@ -19,6 +19,16 @@ function twentyFourHoursAgoIso(): string {
   return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 }
 
+function startOfCurrentWeekIso(): string {
+  const now = new Date();
+  const day = now.getDay();
+  const daysFromMonday = (day + 6) % 7;
+  const monday = new Date(now);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(now.getDate() - daysFromMonday);
+  return monday.toISOString();
+}
+
 function fallbackCreatorName(profile: ProfileRow | undefined, userId: string): string {
   const display = profile?.display_name?.trim();
   if (display) {
@@ -157,8 +167,26 @@ export async function fetchCommunityFeedPage(options: {
   return sounds;
 }
 
-export async function fetchFeaturedCommunitySound(userId?: string): Promise<CommunitySound | null> {
+export async function fetchCommunitySoundsNewToday(userId?: string): Promise<CommunitySound[]> {
   const since = twentyFourHoursAgoIso();
+  const { data, error } = await supabase
+    .from("community_sounds")
+    .select("*")
+    .eq("is_public", true)
+    .eq("is_hidden", false)
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return enrichCommunitySounds((data ?? []) as CommunitySoundRow[], userId);
+}
+
+export async function fetchFeaturedCommunitySound(userId?: string): Promise<CommunitySound | null> {
+  const since = startOfCurrentWeekIso();
   const { data: recentPulses, error: pulseError } = await supabase
     .from("sound_likes")
     .select("sound_id")

@@ -1,11 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Linking,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -18,10 +20,12 @@ import {
 import { Button } from "@/src/components/core/Button";
 import { Card } from "@/src/components/core/Card";
 import { Input } from "@/src/components/core/Input";
+import { ResultsToast } from "@/src/components/core/ResultsToast";
 import { ProfileAvatar } from "@/src/components/profile/ProfileAvatar";
 import { Screen } from "@/src/components/core/Screen";
 import { signOut } from "@/src/features/auth/api";
 import { useAuthSession } from "@/src/features/auth/useAuthSession";
+import { submitFeedback, type FeedbackType } from "@/src/features/feedback/feedbackApi";
 import { FREE_AI_GENERATIONS_PER_MONTH } from "@/src/features/generate/entitlementsStore";
 import {
   updateProfileDisplayName,
@@ -129,6 +133,13 @@ export default function ProfileScreen() {
   const [draftName, setDraftName] = useState("");
   const [savingName, setSavingName] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [feedbackVisible, setFeedbackVisible] = useState(false);
+  const [feedbackType, setFeedbackType] = useState<FeedbackType>("content");
+  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
+  const toastOpacity = useRef(new Animated.Value(0)).current;
 
   const styles = useMemo(
     () =>
@@ -304,9 +315,111 @@ export default function ProfileScreen() {
           gap: theme.spacing.md,
           paddingVertical: theme.spacing.xxl,
         },
+        feedbackTypeRow: {
+          flexDirection: "row",
+          gap: theme.spacing.sm,
+        },
+        feedbackTypeChip: {
+          flex: 1,
+          paddingVertical: 12,
+          paddingHorizontal: 10,
+          borderRadius: theme.radius.md,
+          borderWidth: 1,
+          alignItems: "center",
+        },
+        feedbackTypeLabel: {
+          ...theme.typography.caption,
+          fontWeight: "800",
+          fontSize: 13,
+        },
+        modalBackdrop: {
+          flex: 1,
+          backgroundColor: "#000000bb",
+          justifyContent: "center",
+          padding: theme.spacing.lg,
+        },
+        modalCard: {
+          borderRadius: theme.radius.lg,
+          borderWidth: 1,
+          borderColor: `${theme.colors.primary}55`,
+          backgroundColor: theme.colors.surface,
+          padding: theme.spacing.lg,
+          gap: theme.spacing.md,
+        },
+        modalTitle: {
+          ...theme.typography.title,
+          color: theme.colors.textPrimary,
+          fontSize: 20,
+        },
+        modalHint: {
+          ...theme.typography.body,
+          color: theme.colors.textSecondary,
+          lineHeight: 21,
+        },
       }),
     [scrollBottomPad, theme]
   );
+
+  const showToast = useCallback(
+    (message: string) => {
+      setToastMessage(message);
+      setToastVisible(true);
+      toastOpacity.stopAnimation();
+      toastOpacity.setValue(0);
+      Animated.sequence([
+        Animated.timing(toastOpacity, {
+          toValue: 1,
+          duration: 180,
+          useNativeDriver: true,
+        }),
+        Animated.delay(1800),
+        Animated.timing(toastOpacity, {
+          toValue: 0,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+      ]).start(({ finished }) => {
+        if (finished) {
+          setToastVisible(false);
+        }
+      });
+    },
+    [toastOpacity]
+  );
+
+  const openFeedbackModal = useCallback(() => {
+    setFeedbackType("content");
+    setFeedbackMessage("");
+    setFeedbackVisible(true);
+    setErrorMessage(null);
+  }, []);
+
+  const closeFeedbackModal = useCallback(() => {
+    if (submittingFeedback) {
+      return;
+    }
+    setFeedbackVisible(false);
+  }, [submittingFeedback]);
+
+  const handleSubmitFeedback = useCallback(async () => {
+    const userId = session?.user?.id;
+    if (!userId) {
+      setErrorMessage("Sign in to send feedback.");
+      return;
+    }
+    setSubmittingFeedback(true);
+    setErrorMessage(null);
+    try {
+      await submitFeedback(userId, feedbackType, feedbackMessage);
+      setFeedbackVisible(false);
+      setFeedbackMessage("");
+      showToast("Thanks — we received your feedback");
+    } catch (e) {
+      setErrorMessage(e instanceof Error ? e.message : "Could not send feedback.");
+    } finally {
+      setSubmittingFeedback(false);
+    }
+  }, [feedbackMessage, feedbackType, session?.user?.id, showToast]);
 
   const loadProfile = useCallback(
     async ({ initial }: { initial: boolean }) => {
@@ -627,11 +740,73 @@ export default function ProfileScreen() {
                   disabled={signingOut}
                   onPress={() => void handleSignOut()}
                 />
+                <Button label="Send Feedback" variant="secondary" onPress={openFeedbackModal} />
               </View>
             </Card>
           </>
         )}
       </ScrollView>
+
+      <Modal visible={feedbackVisible} transparent animationType="fade" onRequestClose={closeFeedbackModal}>
+        <View style={styles.modalBackdrop}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeFeedbackModal} accessibilityLabel="Close" />
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Send feedback</Text>
+            <Text style={styles.modalHint}>Tell us what content or features you would like in SoundPulse.</Text>
+            <View style={styles.feedbackTypeRow}>
+              {(
+                [
+                  { key: "content" as const, label: "Request Content" },
+                  { key: "feature" as const, label: "Request Feature" },
+                ] as const
+              ).map((option) => {
+                const active = feedbackType === option.key;
+                return (
+                  <Pressable
+                    key={option.key}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    onPress={() => setFeedbackType(option.key)}
+                    style={[
+                      styles.feedbackTypeChip,
+                      {
+                        borderColor: active ? theme.colors.primary : `${theme.colors.sky}44`,
+                        backgroundColor: active ? `${theme.colors.primary}28` : theme.colors.background,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.feedbackTypeLabel,
+                        { color: active ? theme.colors.textPrimary : theme.colors.textSecondary },
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Input
+              placeholder="Describe your idea…"
+              placeholderTextColor={theme.colors.textSecondary}
+              value={feedbackMessage}
+              onChangeText={setFeedbackMessage}
+              multiline
+              numberOfLines={4}
+              style={{ minHeight: 100, textAlignVertical: "top" }}
+            />
+            <Button
+              label={submittingFeedback ? "Sending…" : "Submit"}
+              onPress={() => void handleSubmitFeedback()}
+              disabled={submittingFeedback || !feedbackMessage.trim()}
+            />
+            <Button label="Cancel" variant="secondary" onPress={closeFeedbackModal} disabled={submittingFeedback} />
+          </View>
+        </View>
+      </Modal>
+
+      <ResultsToast visible={toastVisible} message={toastMessage} opacityAnim={toastOpacity} theme={theme} />
     </Screen>
   );
 }

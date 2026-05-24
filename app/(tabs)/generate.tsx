@@ -578,6 +578,31 @@ export default function GenerateScreen() {
           </>
         ) : (
           <>
+            <View style={styles.mixerTopBar}>
+              <Text style={styles.mixerTopLabel}>Layer Mixer</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={mixPlaying ? "Pause mix" : "Play mix"}
+                onPress={() => void toggleMixerPlay()}
+                disabled={mixLoading || (!mixPlaying && !hasEnabledLayer)}
+                style={[
+                  styles.mixerTopPlayBtn,
+                  mixPlaying && styles.mixerTopPlayBtnActive,
+                  (mixLoading || (!mixPlaying && !hasEnabledLayer)) && styles.mixerTopPlayBtnDisabled,
+                ]}
+              >
+                {mixLoading ? (
+                  <ActivityIndicator color={theme.colors.primary} size="small" />
+                ) : (
+                  <Ionicons
+                    name={mixPlaying ? "pause" : "play"}
+                    size={22}
+                    color={mixPlaying ? theme.colors.sky : theme.colors.primary}
+                  />
+                )}
+              </Pressable>
+            </View>
+
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Randomize layers"
@@ -931,6 +956,34 @@ function stylesForTheme(theme: ReturnType<typeof useAppTheme>) {
       ...theme.typography.title,
       marginBottom: theme.spacing.md,
       color: theme.colors.primary,
+    },
+    mixerTopBar: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: theme.spacing.sm,
+    },
+    mixerTopLabel: {
+      ...theme.typography.title,
+      color: theme.colors.textPrimary,
+      fontSize: 18,
+    },
+    mixerTopPlayBtn: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: 1,
+      borderColor: `${theme.colors.primary}66`,
+      backgroundColor: `${theme.colors.primary}18`,
+    },
+    mixerTopPlayBtnActive: {
+      borderColor: theme.colors.sky,
+      backgroundColor: `${theme.colors.sky}22`,
+    },
+    mixerTopPlayBtnDisabled: {
+      opacity: 0.45,
     },
     randomizeBtn: {
       flexDirection: "row",
