@@ -59,6 +59,11 @@ export default function SignUpScreen() {
           lineHeight: 20,
           marginTop: -theme.spacing.sm,
         },
+        agreeLink: {
+          color: theme.colors.sky,
+          fontWeight: "600" as const,
+          textDecorationLine: "underline" as const,
+        },
         dividerRow: {
           flexDirection: "row",
           alignItems: "center",
@@ -189,7 +194,15 @@ export default function SignUpScreen() {
         )}
 
         <Text style={styles.agreeIntro}>
-          By signing up you agree to the Terms of Service and Privacy Policy for SoundPulse.
+          By signing up you agree to our{" "}
+          <Text style={styles.agreeLink} onPress={() => router.push("/terms-of-service")}>
+            Terms of Service
+          </Text>{" "}
+          and{" "}
+          <Text style={styles.agreeLink} onPress={() => router.push("/privacy-policy")}>
+            Privacy Policy
+          </Text>
+          .
         </Text>
 
         <Link href="/(auth)/sign-in" style={styles.link}>

@@ -129,6 +129,8 @@ function useProtectedNavigation() {
     }
 
     const inAuthGroup = segments[0] === "(auth)";
+    const isPublicLegal =
+      segments[0] === "privacy-policy" || segments[0] === "terms-of-service";
     const segList = segments as unknown as string[];
 
     if (session) {
@@ -151,7 +153,7 @@ function useProtectedNavigation() {
       return;
     }
 
-    if (!inAuthGroup) {
+    if (!inAuthGroup && !isPublicLegal) {
       router.replace("/(auth)/sign-in");
     }
   }, [isLoading, router, segments, session]);
@@ -173,6 +175,8 @@ function RootLayoutInner() {
         <Stack.Screen name="breathing" />
         <Stack.Screen name="stories" />
         <Stack.Screen name="creator/[userId]" />
+        <Stack.Screen name="privacy-policy" />
+        <Stack.Screen name="terms-of-service" />
       </Stack>
     </ThemeProvider>
   );

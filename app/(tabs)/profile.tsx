@@ -288,6 +288,22 @@ export default function ProfileScreen() {
           gap: theme.spacing.md,
           paddingVertical: theme.spacing.xxl,
         },
+        legalRow: {
+          flexDirection: "row",
+          flexWrap: "wrap",
+          justifyContent: "center",
+          alignItems: "center",
+          gap: theme.spacing.sm,
+        },
+        legalLink: {
+          ...theme.typography.caption,
+          color: theme.colors.sky,
+          textDecorationLine: "underline",
+        },
+        legalSep: {
+          ...theme.typography.caption,
+          color: theme.colors.textSecondary,
+        },
         feedbackTypeRow: {
           flexDirection: "row",
           gap: theme.spacing.sm,
@@ -669,6 +685,18 @@ export default function ProfileScreen() {
                   onPress={() => void handleSignOut()}
                 />
                 <Button label="Send Feedback" variant="secondary" onPress={openFeedbackModal} />
+              </View>
+            </Card>
+
+            <Card style={styles.settingsCard}>
+              <View style={styles.legalRow}>
+                <Pressable onPress={() => router.push("/privacy-policy")}>
+                  <Text style={styles.legalLink}>Privacy Policy</Text>
+                </Pressable>
+                <Text style={styles.legalSep}>|</Text>
+                <Pressable onPress={() => router.push("/terms-of-service")}>
+                  <Text style={styles.legalLink}>Terms</Text>
+                </Pressable>
               </View>
             </Card>
           </>
