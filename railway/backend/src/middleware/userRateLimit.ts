@@ -49,3 +49,35 @@ export const accountDeleteRateLimit = createUserRateLimit({
   errorCode: "ACCOUNT_DELETE_RATE_LIMITED",
   message: "Too many account deletion attempts. Try again tomorrow.",
 });
+
+/** POST /v1/community/pulse — 60 per user per hour. */
+export const communityPulseRateLimit = createUserRateLimit({
+  windowMs: HOUR_MS,
+  max: 60,
+  errorCode: "COMMUNITY_PULSE_RATE_LIMITED",
+  message: "Too many pulse actions. Try again later.",
+});
+
+/** POST /v1/community/save — 60 per user per hour. */
+export const communitySaveRateLimit = createUserRateLimit({
+  windowMs: HOUR_MS,
+  max: 60,
+  errorCode: "COMMUNITY_SAVE_RATE_LIMITED",
+  message: "Too many save actions. Try again later.",
+});
+
+/** POST /v1/community/report — 5 per user per hour. */
+export const communityReportRateLimit = createUserRateLimit({
+  windowMs: HOUR_MS,
+  max: 5,
+  errorCode: "COMMUNITY_REPORT_RATE_LIMITED",
+  message: "Too many reports. Try again later.",
+});
+
+/** POST /v1/community/share — 10 per user per hour. */
+export const communityShareRateLimit = createUserRateLimit({
+  windowMs: HOUR_MS,
+  max: 10,
+  errorCode: "COMMUNITY_SHARE_RATE_LIMITED",
+  message: "Too many share actions. Try again later.",
+});

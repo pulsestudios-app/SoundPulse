@@ -3,6 +3,13 @@ import { supabase } from "@/src/lib/supabase";
 
 import type { SavedLayerSnapshot } from "@/src/features/mixer/layerPresets";
 
+import {
+  pulseCommunitySoundViaBackend,
+  reportCommunitySoundViaBackend,
+  saveCommunitySoundViaBackend,
+  shareAudioToCommunityViaBackend,
+  shareMixToCommunityViaBackend,
+} from "./communityBackendApi";
 import type { CommunityCategoryKey } from "./categories";
 import type {
   CommunitySound,
@@ -240,22 +247,12 @@ export async function shareMixToCommunity(input: {
   savedMixId: string;
   tags?: CommunityCategoryKey[];
 }): Promise<void> {
-  const mixName = sanitizeSoundTitle(input.name);
-  const { error } = await supabase.from("community_sounds").insert({
-    user_id: input.userId,
-    title: mixName,
-    prompt: `Layer mix · ${mixName}`,
-    kind: "mix",
-    mix_layers: input.layers,
-    saved_mix_id: input.savedMixId,
-    tags: input.tags ?? ["relax"],
-    is_public: true,
-    duration: 0,
+  await shareMixToCommunityViaBackend({
+    name: sanitizeSoundTitle(input.name),
+    layers: input.layers,
+    savedMixId: input.savedMixId,
+    tags: input.tags,
   });
-
-  if (error) {
-    throw new Error(error.message);
-  }
 }
 
 export async function removeCommunitySoundFromDiscover(userId: string, soundId: string): Promise<void> {
@@ -290,83 +287,29 @@ export async function deleteCommunitySoundCompletely(userId: string, soundId: st
 }
 
 export async function shareSoundToCommunity(input: ShareCommunitySoundInput): Promise<void> {
-  const title = sanitizeSoundTitle(input.title);
-  const { error } = await supabase.from("community_sounds").insert({
-    user_id: input.userId,
-    title,
+  await shareAudioToCommunityViaBackend({
+    title: sanitizeSoundTitle(input.title),
     prompt: input.prompt,
-    audio_url: input.audioUrl,
-    duration: Math.max(0, Math.round(input.duration)),
+    audioUrl: input.audioUrl,
+    duration: input.duration,
     tags: input.tags,
-    is_public: true,
-    kind: "audio",
   });
-
-  if (error) {
-    throw new Error(error.message);
-  }
 }
 
-export async function toggleCommunityPulse(userId: string, sound: CommunitySound): Promise<boolean> {
-  if (sound.hasPulsed) {
-    const { error } = await supabase
-      .from("sound_likes")
-      .delete()
-      .eq("sound_id", sound.id)
-      .eq("user_id", userId);
-    if (error) {
-      throw new Error(error.message);
-    }
-    return false;
-  }
-
-  const { error } = await supabase.from("sound_likes").insert({
-    sound_id: sound.id,
-    user_id: userId,
-  });
-  if (error) {
-    throw new Error(error.message);
-  }
-  return true;
+export async function toggleCommunityPulse(_userId: string, sound: CommunitySound): Promise<boolean> {
+  return pulseCommunitySoundViaBackend(sound.id);
 }
 
-export async function toggleCommunitySave(userId: string, sound: CommunitySound): Promise<boolean> {
-  if (sound.hasSaved) {
-    const { error } = await supabase
-      .from("sound_saves")
-      .delete()
-      .eq("sound_id", sound.id)
-      .eq("user_id", userId);
-    if (error) {
-      throw new Error(error.message);
-    }
-    return false;
-  }
-
-  const { error } = await supabase.from("sound_saves").insert({
-    sound_id: sound.id,
-    user_id: userId,
-  });
-  if (error) {
-    throw new Error(error.message);
-  }
-  return true;
+export async function toggleCommunitySave(_userId: string, sound: CommunitySound): Promise<boolean> {
+  return saveCommunitySoundViaBackend(sound.id);
 }
 
 export async function reportCommunitySound(
-  userId: string,
+  _userId: string,
   soundId: string,
   reason: string
 ): Promise<void> {
-  const { error } = await supabase.from("sound_reports").insert({
-    sound_id: soundId,
-    user_id: userId,
-    reason: reason.trim() || "Community report",
-    status: "pending",
-  });
-  if (error) {
-    throw new Error(error.message);
-  }
+  await reportCommunitySoundViaBackend(soundId, reason);
 }
 
 export async function fetchSavedCommunitySounds(userId: string): Promise<CommunitySound[]> {

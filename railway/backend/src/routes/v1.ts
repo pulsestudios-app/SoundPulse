@@ -5,6 +5,7 @@ import { authenticateUser } from "../middleware/authenticateUser.js";
 import { accountDeleteRateLimit } from "../middleware/userRateLimit.js";
 import { authRouter } from "./auth.js";
 import { billingRouter } from "./billing.js";
+import { communityRouter } from "./community.js";
 import { soundsRouter } from "./sounds.js";
 
 export const v1Router = express.Router();
@@ -19,6 +20,7 @@ v1Router.get("/health", (_req: Request, res: Response) => {
 
 v1Router.use("/auth", authRouter);
 v1Router.use("/billing", billingRouter);
+v1Router.use("/community", communityRouter);
 v1Router.use("/sounds", soundsRouter);
 
 v1Router.delete("/account", authenticateUser, accountDeleteRateLimit, async (req: Request, res: Response) => {
