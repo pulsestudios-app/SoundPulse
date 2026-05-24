@@ -156,39 +156,42 @@ export function CommunitySoundCard({
       </View>
 
       <View style={styles.actions}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={sound.hasPulsed ? "Remove pulse" : "Pulse"}
-          onPress={() => {
-            if (!isPremium) {
-              onUpgrade?.();
-              return;
-            }
-            onPulse();
-          }}
-          style={[
-            styles.actionBtn,
-            {
-              borderColor: sound.hasPulsed ? theme.colors.primary : `${theme.colors.primary}55`,
-              backgroundColor: sound.hasPulsed ? `${theme.colors.primary}22` : `${theme.colors.primary}10`,
-            },
-          ]}
-        >
-          <Ionicons
-            name={sound.hasPulsed ? "radio" : "pulse-outline"}
-            size={18}
-            color={sound.hasPulsed ? theme.colors.primary : theme.colors.textSecondary}
-          />
-          <Text
-            style={{
-              ...theme.typography.caption,
-              color: sound.hasPulsed ? theme.colors.primary : theme.colors.textPrimary,
-              fontWeight: "700",
+        <View style={styles.pulseColumn}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={sound.hasPulsed ? "Remove pulse" : "Pulse"}
+            onPress={() => {
+              if (!isPremium) {
+                onUpgrade?.();
+                return;
+              }
+              onPulse();
             }}
+            style={[
+              styles.actionBtn,
+              {
+                borderColor: sound.hasPulsed ? theme.colors.primary : `${theme.colors.primary}55`,
+                backgroundColor: sound.hasPulsed ? `${theme.colors.primary}22` : `${theme.colors.primary}10`,
+              },
+            ]}
           >
-            Pulse
-          </Text>
-        </Pressable>
+            <Ionicons
+              name={sound.hasPulsed ? "radio" : "pulse-outline"}
+              size={18}
+              color={sound.hasPulsed ? theme.colors.primary : theme.colors.textSecondary}
+            />
+            <Text
+              style={{
+                ...theme.typography.caption,
+                color: sound.hasPulsed ? theme.colors.primary : theme.colors.textPrimary,
+                fontWeight: "700",
+              }}
+            >
+              Pulse
+            </Text>
+          </Pressable>
+          <Text style={[styles.pulseHint, { color: theme.colors.textSecondary }]}>Pulse to boost this sound</Text>
+        </View>
 
         <Pressable
           accessibilityRole="button"
@@ -231,7 +234,17 @@ export function CommunitySoundCard({
 const styles = StyleSheet.create({
   actions: {
     flexDirection: "row",
+    alignItems: "flex-start",
     gap: 10,
+  },
+  pulseColumn: {
+    gap: 4,
+    maxWidth: 148,
+  },
+  pulseHint: {
+    fontSize: 11,
+    lineHeight: 14,
+    marginLeft: 2,
   },
   actionBtn: {
     flexDirection: "row",

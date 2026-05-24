@@ -30,6 +30,7 @@ import { supabase } from "@/src/lib/supabase";
 import { useAppTheme } from "@/src/theme";
 
 type LibraryTab = "my" | "saved";
+type MySoundsSort = "recent" | "oldest" | "duration";
 
 type GeneratedSoundRow = {
   id: string;
@@ -91,6 +92,7 @@ export default function LibraryScreen() {
   const userId = session?.user?.id;
 
   const [activeTab, setActiveTab] = useState<LibraryTab>("my");
+  const [mySort, setMySort] = useState<MySoundsSort>("recent");
   const [sounds, setSounds] = useState<GeneratedSoundRow[]>([]);
   const [savedSounds, setSavedSounds] = useState<CommunitySound[]>([]);
   const [loading, setLoading] = useState(true);
@@ -150,6 +152,21 @@ export default function LibraryScreen() {
         },
         tabTextActive: {
           color: theme.colors.textPrimary,
+        },
+        sortRow: {
+          flexDirection: "row",
+          gap: theme.spacing.sm,
+        },
+        sortChip: {
+          paddingHorizontal: 14,
+          paddingVertical: 8,
+          borderRadius: theme.radius.full,
+          borderWidth: 1,
+        },
+        sortChipLabel: {
+          ...theme.typography.caption,
+          fontWeight: "700",
+          fontSize: 13,
         },
         list: {
           gap: theme.spacing.md,
@@ -433,6 +450,25 @@ export default function LibraryScreen() {
     [userId]
   );
 
+  const sortedMySounds = useMemo(() => {
+    const copy = [...sounds];
+    if (mySort === "recent") {
+      return copy.sort((a, b) => {
+        const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return bTime - aTime;
+      });
+    }
+    if (mySort === "oldest") {
+      return copy.sort((a, b) => {
+        const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return aTime - bTime;
+      });
+    }
+    return copy.sort((a, b) => (b.duration ?? 0) - (a.duration ?? 0));
+  }, [mySort, sounds]);
+
   const renderMySounds = () => {
     if (loading) {
       return (
@@ -443,7 +479,7 @@ export default function LibraryScreen() {
       );
     }
 
-    if (sounds.length === 0) {
+    if (sortedMySounds.length === 0) {
       return (
         <View style={styles.centeredState}>
           <View style={styles.emptyIconWrap}>
@@ -458,8 +494,44 @@ export default function LibraryScreen() {
     }
 
     return (
-      <View style={styles.list}>
-        {sounds.map((sound) => {
+      <View style={{ gap: theme.spacing.md }}>
+        <View style={styles.sortRow}>
+          {(
+            [
+              { key: "recent" as const, label: "Recent" },
+              { key: "oldest" as const, label: "Oldest" },
+              { key: "duration" as const, label: "Duration" },
+            ] as const
+          ).map((option) => {
+            const active = mySort === option.key;
+            return (
+              <Pressable
+                key={option.key}
+                onPress={() => setMySort(option.key)}
+                style={[
+                  styles.sortChip,
+                  {
+                    borderColor: active ? theme.colors.sky : `${theme.colors.sky}44`,
+                    backgroundColor: active ? `${theme.colors.primary}33` : theme.colors.surface,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`Sort by ${option.label}`}
+              >
+                <Text
+                  style={[
+                    styles.sortChipLabel,
+                    { color: active ? theme.colors.textPrimary : theme.colors.textSecondary },
+                  ]}
+                >
+                  {option.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <View style={styles.list}>
+        {sortedMySounds.map((sound) => {
           const isPlaying = playingSoundId === sound.id;
           const isLoadingSound = loadingSoundId === sound.id;
           const title = soundTitle(sound);
@@ -512,6 +584,7 @@ export default function LibraryScreen() {
             </View>
           );
         })}
+        </View>
       </View>
     );
   };

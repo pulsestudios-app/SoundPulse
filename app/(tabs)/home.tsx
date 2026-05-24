@@ -338,11 +338,20 @@ export default function HomeScreen() {
           letterSpacing: 0.8,
           fontWeight: "700",
         },
+        featuredGlowWrap: {
+          borderRadius: theme.radius.lg,
+          shadowColor: "#7C3AED",
+          shadowOffset: { width: 0, height: 0 },
+          shadowOpacity: 0.55,
+          shadowRadius: 20,
+          elevation: 16,
+          marginHorizontal: 2,
+        },
         featuredOuter: {
           borderRadius: theme.radius.lg,
           overflow: "hidden",
           borderWidth: 1,
-          borderColor: `${theme.colors.primary}55`,
+          borderColor: `${theme.colors.primary}88`,
         },
         featuredGradient: {
           padding: theme.spacing.xl,
@@ -372,8 +381,18 @@ export default function HomeScreen() {
         },
         featuredActions: {
           flexDirection: "row",
+          alignItems: "flex-start",
           gap: 10,
           marginTop: theme.spacing.sm,
+        },
+        featuredPulseColumn: {
+          gap: 4,
+        },
+        pulseHint: {
+          fontSize: 11,
+          lineHeight: 14,
+          color: theme.colors.textSecondary,
+          marginLeft: 2,
         },
         featuredActionBtn: {
           flexDirection: "row",
@@ -577,6 +596,7 @@ export default function HomeScreen() {
         {featured ? (
           <View>
             <Text style={styles.sectionLabel}>Featured today</Text>
+            <View style={styles.featuredGlowWrap}>
             <View style={styles.featuredOuter}>
               <LinearGradient
                 colors={gradientColors}
@@ -625,39 +645,42 @@ export default function HomeScreen() {
                   )}
                 </Pressable>
                 <View style={styles.featuredActions}>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={featured.hasPulsed ? "Remove pulse" : "Pulse"}
-                    onPress={() => {
-                      if (!isPremium) {
-                        openUpgrade();
-                        return;
-                      }
-                      void onPulse(featured);
-                    }}
-                    style={[
-                      styles.featuredActionBtn,
-                      {
-                        borderColor: featured.hasPulsed ? theme.colors.primary : `${theme.colors.primary}55`,
-                        backgroundColor: featured.hasPulsed ? `${theme.colors.primary}22` : `${theme.colors.primary}10`,
-                      },
-                    ]}
-                  >
-                    <Ionicons
-                      name={featured.hasPulsed ? "radio" : "pulse-outline"}
-                      size={18}
-                      color={featured.hasPulsed ? theme.colors.primary : theme.colors.textSecondary}
-                    />
-                    <Text
-                      style={{
-                        ...theme.typography.caption,
-                        color: featured.hasPulsed ? theme.colors.primary : theme.colors.textPrimary,
-                        fontWeight: "700",
+                  <View style={styles.featuredPulseColumn}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={featured.hasPulsed ? "Remove pulse" : "Pulse"}
+                      onPress={() => {
+                        if (!isPremium) {
+                          openUpgrade();
+                          return;
+                        }
+                        void onPulse(featured);
                       }}
+                      style={[
+                        styles.featuredActionBtn,
+                        {
+                          borderColor: featured.hasPulsed ? theme.colors.primary : `${theme.colors.primary}55`,
+                          backgroundColor: featured.hasPulsed ? `${theme.colors.primary}22` : `${theme.colors.primary}10`,
+                        },
+                      ]}
                     >
-                      Pulse
-                    </Text>
-                  </Pressable>
+                      <Ionicons
+                        name={featured.hasPulsed ? "radio" : "pulse-outline"}
+                        size={18}
+                        color={featured.hasPulsed ? theme.colors.primary : theme.colors.textSecondary}
+                      />
+                      <Text
+                        style={{
+                          ...theme.typography.caption,
+                          color: featured.hasPulsed ? theme.colors.primary : theme.colors.textPrimary,
+                          fontWeight: "700",
+                        }}
+                      >
+                        Pulse
+                      </Text>
+                    </Pressable>
+                    <Text style={styles.pulseHint}>Pulse to boost this sound</Text>
+                  </View>
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel={featured.hasSaved ? "Unsave" : "Save"}
@@ -673,6 +696,7 @@ export default function HomeScreen() {
                       {
                         borderColor: featured.hasSaved ? theme.colors.sky : `${theme.colors.sky}55`,
                         backgroundColor: featured.hasSaved ? `${theme.colors.sky}18` : "transparent",
+                        alignSelf: "flex-start",
                       },
                     ]}
                   >
@@ -693,6 +717,7 @@ export default function HomeScreen() {
                   </Pressable>
                 </View>
               </LinearGradient>
+            </View>
             </View>
           </View>
         ) : !loadingInitial ? (

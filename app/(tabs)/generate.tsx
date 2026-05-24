@@ -363,6 +363,20 @@ export default function GenerateScreen() {
     void layerMixerEngine.setLayerVolume(preset.key, rounded);
   }, []);
 
+  const randomizeLayers = useCallback(() => {
+    const pickCount = 3 + Math.floor(Math.random() * 2);
+    const indices = [...Array(LAYER_PRESETS.length).keys()].sort(() => Math.random() - 0.5);
+    const picked = new Set(indices.slice(0, pickCount));
+    const next = LAYER_PRESETS.map((_, idx) => ({
+      enabled: picked.has(idx),
+      volume: picked.has(idx) ? 20 + Math.floor(Math.random() * 61) : (layersRef.current[idx]?.volume ?? 45),
+    }));
+    setLayers(next);
+    void layerMixerEngine.stopMix();
+    setMixPlaying(false);
+    showToast("Layers randomized");
+  }, [showToast]);
+
   const openSaveMixModal = useCallback(() => {
     if (!hasEnabledLayer) {
       return;
@@ -451,6 +465,7 @@ export default function GenerateScreen() {
           >
             <Text style={[styles.modeText, mode === "ai" && styles.modeTextActive]}>AI Generate</Text>
             <View style={styles.proBadge}>
+              <Ionicons name="lock-closed-outline" size={10} color={theme.colors.sky} />
               <Text style={styles.proBadgeText}>PRO</Text>
             </View>
           </Pressable>
@@ -563,6 +578,16 @@ export default function GenerateScreen() {
           </>
         ) : (
           <>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Randomize layers"
+              onPress={randomizeLayers}
+              style={styles.randomizeBtn}
+            >
+              <Ionicons name="shuffle" size={18} color={theme.colors.sky} />
+              <Text style={styles.randomizeLabel}>Randomize</Text>
+            </Pressable>
+
             <Card>
               <Text style={styles.sectionTitle}>Layers</Text>
               {LAYER_PRESETS.map((layer, idx) => {
@@ -777,6 +802,9 @@ function stylesForTheme(theme: ReturnType<typeof useAppTheme>) {
       color: theme.colors.textPrimary,
     },
     proBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
       backgroundColor: `${theme.colors.sky}2a`,
       borderWidth: 1,
       borderColor: `${theme.colors.sky}99`,
@@ -903,6 +931,25 @@ function stylesForTheme(theme: ReturnType<typeof useAppTheme>) {
       ...theme.typography.title,
       marginBottom: theme.spacing.md,
       color: theme.colors.primary,
+    },
+    randomizeBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      alignSelf: "flex-start",
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      borderRadius: theme.radius.full,
+      borderWidth: 1,
+      borderColor: `${theme.colors.sky}55`,
+      backgroundColor: `${theme.colors.primary}14`,
+    },
+    randomizeLabel: {
+      ...theme.typography.body,
+      color: theme.colors.textPrimary,
+      fontWeight: "700",
+      fontSize: 14,
     },
     layerRow: {
       paddingVertical: theme.spacing.md,
