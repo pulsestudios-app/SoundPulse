@@ -8,9 +8,10 @@ import {
   generateSoundEffect,
 } from "../services/elevenlabs.js";
 import {
-  assertCanGenerate,
+  assertGenerationSlotRecorded,
   GenerationLimitError,
-  incrementGenerationCount,
+  releaseGenerationSlot,
+  reserveGenerationSlot,
 } from "../services/generationLimits.js";
 import { uploadGeneratedSoundscape } from "../services/soundscapeStorage.js";
 
@@ -30,12 +31,14 @@ function clampDuration(raw: unknown): number {
 }
 
 soundsRouter.post("/generate", authenticateUser, generateRateLimit, async (req: Request, res: Response) => {
-  try {
-    const authUserId = req.user?.id;
-    if (!authUserId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
+  const authUserId = req.user?.id;
+  if (!authUserId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
 
+  let slotReserved = false;
+
+  try {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
     const bodyUserId = typeof body.userId === "string" ? body.userId.trim() : "";
@@ -53,20 +56,31 @@ soundsRouter.post("/generate", authenticateUser, generateRateLimit, async (req: 
 
     const durationSeconds = clampDuration(body.duration_seconds);
 
-    await assertCanGenerate(authUserId);
+    await reserveGenerationSlot(authUserId);
+    slotReserved = true;
 
     const audioBuffer = await generateSoundEffect(prompt, durationSeconds);
     const stored = await uploadGeneratedSoundscape(authUserId, audioBuffer, durationSeconds);
 
-    await incrementGenerationCount(authUserId);
+    try {
+      await assertGenerationSlotRecorded(authUserId);
+    } catch (verifyErr) {
+      console.error("[sounds/generate] usage accounting verify failed after success:", verifyErr);
+      throw verifyErr;
+    }
 
     return res.json({
       url: stored.url,
       duration: stored.duration,
     });
   } catch (err) {
+    if (slotReserved) {
+      await releaseGenerationSlot(authUserId);
+    }
+
     if (err instanceof GenerationLimitError) {
-      return res.status(403).json({ error: err.code });
+      const status = err.code === "GENERATION_RESERVE_FAILED" ? 500 : 403;
+      return res.status(status).json({ error: err.code });
     }
     if (err instanceof ElevenLabsConfigError) {
       return res.status(503).json({ error: err.message });

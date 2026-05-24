@@ -2,7 +2,10 @@ import { supabaseAdmin } from "../lib/supabaseAdmin.js";
 
 export type GenerationPlanBucket = "free" | "basic" | "pro" | "unlimited";
 
-export type GenerationLimitErrorCode = "GENERATION_LIMIT_REACHED" | "PAID_PLAN_REQUIRED";
+export type GenerationLimitErrorCode =
+  | "GENERATION_LIMIT_REACHED"
+  | "PAID_PLAN_REQUIRED"
+  | "GENERATION_RESERVE_FAILED";
 
 export class GenerationLimitError extends Error {
   readonly code: GenerationLimitErrorCode;
@@ -20,11 +23,6 @@ const GENERATION_LIMITS: Record<GenerationPlanBucket, number> = {
   pro: 20,
   unlimited: 40,
 };
-
-export function currentGenerationsMonthKey(): string {
-  const now = new Date();
-  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
-}
 
 export function resolveGenerationPlanBucket(planRaw: string | null | undefined): GenerationPlanBucket {
   const plan = (planRaw ?? "free").trim().toLowerCase();
@@ -46,10 +44,6 @@ export function resolveGenerationPlanBucket(planRaw: string | null | undefined):
   return "free";
 }
 
-export function generationLimitForPlan(planRaw: string | null | undefined): number {
-  return GENERATION_LIMITS[resolveGenerationPlanBucket(planRaw)];
-}
-
 async function getUserPlan(userId: string): Promise<string> {
   const { data: profile } = await supabaseAdmin
     .from("profiles")
@@ -58,7 +52,7 @@ async function getUserPlan(userId: string): Promise<string> {
     .maybeSingle();
 
   const profilePlan = typeof profile?.plan === "string" ? profile.plan.trim() : "";
-  if (profilePlan) {
+  if (profilePlan && profilePlan.toLowerCase() !== "free") {
     return profilePlan;
   }
 
@@ -79,15 +73,49 @@ async function getUserPlan(userId: string): Promise<string> {
   return "free";
 }
 
-export async function assertCanGenerate(userId: string): Promise<void> {
-  const plan = await getUserPlan(userId);
+function limitErrorForUser(plan: string): GenerationLimitError {
   const bucket = resolveGenerationPlanBucket(plan);
-  const limit = GENERATION_LIMITS[bucket];
+  if (bucket === "free" || GENERATION_LIMITS[bucket] <= 0) {
+    return new GenerationLimitError("PAID_PLAN_REQUIRED");
+  }
+  return new GenerationLimitError("GENERATION_LIMIT_REACHED");
+}
 
-  if (bucket === "free" || limit <= 0) {
-    throw new GenerationLimitError("PAID_PLAN_REQUIRED");
+/** Atomically reserves one generation slot before calling ElevenLabs. */
+export async function reserveGenerationSlot(userId: string): Promise<void> {
+  const { data, error } = await supabaseAdmin.rpc("reserve_generation_slot", {
+    p_user_id: userId,
+  });
+
+  if (error) {
+    console.error("[generationLimits] reserve_generation_slot RPC failed:", error.message);
+    throw new GenerationLimitError("GENERATION_RESERVE_FAILED");
   }
 
+  if (data === true) {
+    return;
+  }
+
+  const plan = await getUserPlan(userId);
+  throw limitErrorForUser(plan);
+}
+
+/** Returns reserved slot if generation/upload fails after reserve. */
+export async function releaseGenerationSlot(userId: string): Promise<void> {
+  const { error } = await supabaseAdmin.rpc("release_generation_slot", {
+    p_user_id: userId,
+  });
+
+  if (error) {
+    console.error("[generationLimits] release_generation_slot RPC failed:", error.message);
+  }
+}
+
+/**
+ * Post-generation accounting check. Slot is reserved before ElevenLabs; this verifies
+ * the counter advanced. On failure, callers must not return audio to the client.
+ */
+export async function assertGenerationSlotRecorded(userId: string): Promise<void> {
   const monthKey = currentGenerationsMonthKey();
   const { data: profile, error } = await supabaseAdmin
     .from("profiles")
@@ -96,52 +124,25 @@ export async function assertCanGenerate(userId: string): Promise<void> {
     .single();
 
   if (error || !profile) {
-    throw new GenerationLimitError("GENERATION_LIMIT_REACHED");
+    console.error(
+      "[generationLimits] post-generation verify failed:",
+      error?.message ?? "missing profile"
+    );
+    throw new GenerationLimitError("GENERATION_RESERVE_FAILED");
   }
 
   const used =
     profile.generations_month === monthKey
-      ? typeof profile.generations_used_this_month === "number" &&
-        Number.isFinite(profile.generations_used_this_month)
-        ? profile.generations_used_this_month
-        : Number(profile.generations_used_this_month) || 0
+      ? Number(profile.generations_used_this_month) || 0
       : 0;
 
-  if (used >= limit) {
-    throw new GenerationLimitError("GENERATION_LIMIT_REACHED");
+  if (used < 1) {
+    console.error("[generationLimits] post-generation verify: counter not incremented for", userId);
+    throw new GenerationLimitError("GENERATION_RESERVE_FAILED");
   }
 }
 
-export async function incrementGenerationCount(userId: string): Promise<void> {
-  const monthKey = currentGenerationsMonthKey();
-  const { data: profile, error: readError } = await supabaseAdmin
-    .from("profiles")
-    .select("generations_used_this_month, generations_month")
-    .eq("id", userId)
-    .single();
-
-  if (readError || !profile) {
-    console.error("[generationLimits] increment read failed:", readError?.message ?? "missing profile");
-    return;
-  }
-
-  const used =
-    profile.generations_month === monthKey
-      ? typeof profile.generations_used_this_month === "number" &&
-        Number.isFinite(profile.generations_used_this_month)
-        ? profile.generations_used_this_month
-        : Number(profile.generations_used_this_month) || 0
-      : 0;
-
-  const { error: updateError } = await supabaseAdmin
-    .from("profiles")
-    .update({
-      generations_used_this_month: used + 1,
-      generations_month: monthKey,
-    })
-    .eq("id", userId);
-
-  if (updateError) {
-    console.error("[generationLimits] increment update failed:", updateError.message);
-  }
+export function currentGenerationsMonthKey(): string {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 }

@@ -23,6 +23,8 @@ const GENERATION_ERROR_MESSAGES: Record<string, string> = {
     "You've used all your AI generations this month. Upgrade to generate more.",
   PAID_PLAN_REQUIRED: "AI generation requires a paid plan. Upgrade to start generating sounds.",
   RATE_LIMIT_EXCEEDED: "Too many generation requests. Please wait a minute and try again.",
+  GENERATION_RESERVE_FAILED:
+    "We could not record your generation usage. Please try again in a moment.",
 };
 
 function messageForGenerationError(code: string): string {
