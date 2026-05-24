@@ -24,8 +24,11 @@ import { aiPreviewPlayer, formatAudioDuration } from "@/src/features/audio/aiPre
 import { layerMixerEngine } from "@/src/features/audio/layerMixerEngine";
 import { onPlaybackStopped } from "@/src/features/audio/playbackRegistry";
 import { useAuthSession } from "@/src/features/auth/useAuthSession";
+import { inferTagsFromPrompt } from "@/src/features/community/categories";
+import { shareSoundToCommunity } from "@/src/features/community/communityApi";
 import { generateSoundscape, GenerateSoundscapeError } from "@/src/features/soundscapes/generateApi";
 import { saveLibrarySound } from "@/src/features/soundscapes/userLibrary";
+import { useIsPremium } from "@/src/features/subscription/useIsPremium";
 import { useScrollContentBottomPad } from "@/src/hooks/useScrollBottomInset";
 import { supabase } from "@/src/lib/supabase";
 import { useAppTheme } from "@/src/theme";
@@ -83,6 +86,7 @@ export default function GenerateScreen() {
   const theme = useAppTheme();
   const scrollBottomPad = useScrollContentBottomPad(24);
   const { session } = useAuthSession();
+  const { isPremium } = useIsPremium();
 
   const [mode, setMode] = useState<GenerateMode>("ai");
   const [prompt, setPrompt] = useState("");
@@ -92,6 +96,9 @@ export default function GenerateScreen() {
   const [aiResult, setAiResult] = useState<AiGenerationResult | null>(null);
   const [aiPlaying, setAiPlaying] = useState(false);
   const [aiSaved, setAiSaved] = useState(false);
+  const [shareToCommunity, setShareToCommunity] = useState(false);
+  const [sharedToCommunity, setSharedToCommunity] = useState(false);
+  const [sharingCommunity, setSharingCommunity] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
@@ -187,6 +194,8 @@ export default function GenerateScreen() {
     setAiResult(null);
     setAiPlaying(false);
     setAiSaved(false);
+    setShareToCommunity(false);
+    setSharedToCommunity(false);
     await aiPreviewPlayer.unload();
 
     try {
@@ -218,6 +227,42 @@ export default function GenerateScreen() {
       setAiLoading(false);
     }
   }, [prompt, session?.user?.id, saveGeneratedSound, showToast]);
+
+  const publishToCommunity = useCallback(
+    async (result: AiGenerationResult, userId: string) => {
+      setSharingCommunity(true);
+      try {
+        await shareSoundToCommunity({
+          userId,
+          title: result.title,
+          prompt: result.prompt,
+          audioUrl: result.url,
+          duration: result.duration,
+          tags: inferTagsFromPrompt(result.prompt),
+        });
+        setSharedToCommunity(true);
+        showToast("Shared to community");
+      } catch (e) {
+        setShareToCommunity(false);
+        setAiError(e instanceof Error ? e.message : "Could not share to community.");
+      } finally {
+        setSharingCommunity(false);
+      }
+    },
+    [showToast]
+  );
+
+  const onShareToCommunityChange = useCallback(
+    (enabled: boolean) => {
+      setShareToCommunity(enabled);
+      const userId = session?.user?.id;
+      if (!enabled || !aiResult || !userId || sharedToCommunity || sharingCommunity) {
+        return;
+      }
+      void publishToCommunity(aiResult, userId);
+    },
+    [aiResult, publishToCommunity, session?.user?.id, sharedToCommunity, sharingCommunity]
+  );
 
   const toggleAiPlay = useCallback(async () => {
     if (!aiResult?.url) return;
@@ -406,6 +451,28 @@ export default function GenerateScreen() {
                   onPress={() => void saveAiResult()}
                   disabled={aiSaved}
                 />
+                {isPremium ? (
+                  <View style={styles.shareRow}>
+                    <View style={styles.shareCopy}>
+                      <Text style={styles.shareLabel}>Share to Community</Text>
+                      <Text style={styles.shareHint}>
+                        {sharedToCommunity
+                          ? "Visible on Discover for others to play and pulse."
+                          : "Let others discover and pulse your soundscape."}
+                      </Text>
+                    </View>
+                    <Switch
+                      value={shareToCommunity || sharedToCommunity}
+                      onValueChange={onShareToCommunityChange}
+                      disabled={sharedToCommunity || sharingCommunity}
+                      thumbColor={shareToCommunity || sharedToCommunity ? theme.colors.primary : "#666"}
+                      trackColor={{
+                        false: theme.colors.border,
+                        true: `${theme.colors.primary}88`,
+                      }}
+                    />
+                  </View>
+                ) : null}
               </Card>
             ) : null}
           </>
@@ -642,6 +709,29 @@ function stylesForTheme(theme: ReturnType<typeof useAppTheme>) {
       ...theme.typography.caption,
       color: theme.colors.textSecondary,
       marginTop: 4,
+    },
+    shareRow: {
+      marginTop: theme.spacing.md,
+      paddingTop: theme.spacing.md,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.md,
+    },
+    shareCopy: {
+      flex: 1,
+      gap: 4,
+    },
+    shareLabel: {
+      ...theme.typography.body,
+      color: theme.colors.textPrimary,
+      fontWeight: "700",
+    },
+    shareHint: {
+      ...theme.typography.caption,
+      color: theme.colors.textSecondary,
+      lineHeight: 18,
     },
     sectionTitle: {
       ...theme.typography.title,

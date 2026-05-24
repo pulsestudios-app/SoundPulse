@@ -1,8 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -11,75 +14,211 @@ import {
   View,
 } from "react-native";
 
-import { Card } from "@/src/components/core/Card";
+import { PlaybackTimer } from "@/src/components/audio/PlaybackTimer";
+import { Button } from "@/src/components/core/Button";
+import { CommunitySoundCard } from "@/src/components/community/CommunitySoundCard";
 import { Screen } from "@/src/components/core/Screen";
-import { HomeSoundPulseWave } from "@/src/components/pulse/HomeSoundPulseWave";
-import { pickRandomFeatured, type FeaturedSoundscape } from "@/src/features/soundscapes/featuredCatalog";
-import { loadRecentPlays, recordRecentPlay, type RecentPlay } from "@/src/features/soundscapes/recentPlays";
+import { libraryPlayer } from "@/src/features/audio/libraryPlayer";
+import { onPlaybackStopped } from "@/src/features/audio/playbackRegistry";
+import { useAuthSession } from "@/src/features/auth/useAuthSession";
+import {
+  COMMUNITY_PAGE_SIZE,
+  fetchCommunityFeedPage,
+  fetchFeaturedCommunitySound,
+  toggleCommunityPulse,
+  toggleCommunitySave,
+} from "@/src/features/community/communityApi";
+import { COMMUNITY_CATEGORIES, type CommunityCategoryKey } from "@/src/features/community/categories";
+import { formatPulseCount } from "@/src/features/community/formatPulses";
+import type { CommunitySound } from "@/src/features/community/types";
+import { useIsPremium } from "@/src/features/subscription/useIsPremium";
 import { useScrollContentBottomPad } from "@/src/hooks/useScrollBottomInset";
 import { useAppTheme } from "@/src/theme";
 
-const MOODS = [
-  { key: "sleep", emoji: "😴", label: "Sleep" },
-  { key: "focus", emoji: "🎯", label: "Focus" },
-  { key: "meditation", emoji: "🧘", label: "Meditation" },
-  { key: "nature", emoji: "🌧", label: "Nature" },
-  { key: "urban", emoji: "🏙", label: "Urban" },
-] as const;
-
-function greetingForHour(hour: number): string {
-  if (hour < 12) return "Good morning";
-  if (hour < 17) return "Good afternoon";
-  return "Good evening";
+function communityPlaybackId(soundId: string): string {
+  return `community:${soundId}`;
 }
 
-function formatDuration(seconds: number): string {
-  const totalSeconds = Math.max(0, Math.floor(seconds));
-  const m = Math.floor(totalSeconds / 60);
-  const s = totalSeconds % 60;
+function formatDuration(seconds: number | null): string {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0) {
+    return "0:00";
+  }
+  const total = Math.floor(seconds);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function patchSound(
+  sounds: CommunitySound[],
+  id: string,
+  patch: Partial<CommunitySound>
+): CommunitySound[] {
+  return sounds.map((s) => (s.id === id ? { ...s, ...patch } : s));
 }
 
 export default function HomeScreen() {
   const theme = useAppTheme();
+  const router = useRouter();
   const scrollBottomPad = useScrollContentBottomPad(28);
-  const greeting = greetingForHour(new Date().getHours());
-  const [featured, setFeatured] = useState<FeaturedSoundscape>(() => pickRandomFeatured());
-  const [recent, setRecent] = useState<RecentPlay[]>([]);
+  const { session } = useAuthSession();
+  const { isPremium } = useIsPremium();
+  const userId = session?.user?.id;
+
+  const [featured, setFeatured] = useState<CommunitySound | null>(null);
+  const [feed, setFeed] = useState<CommunitySound[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<CommunityCategoryKey | null>(null);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingInitial, setLoadingInitial] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [paywallVisible, setPaywallVisible] = useState(false);
+
+  const [playingSoundId, setPlayingSoundId] = useState<string | null>(null);
+  const [loadingSoundId, setLoadingSoundId] = useState<string | null>(null);
+
+  useEffect(() => {
+    return onPlaybackStopped(() => {
+      setPlayingSoundId(null);
+    });
+  }, []);
+
+  const loadFeedPage = useCallback(
+    async (nextPage: number, category: CommunityCategoryKey | null, replace: boolean) => {
+      const rows = await fetchCommunityFeedPage({
+        userId,
+        category,
+        page: nextPage,
+        trending24h: true,
+      });
+
+      setFeed((prev) => (replace ? rows : [...prev, ...rows]));
+      setHasMore(rows.length >= COMMUNITY_PAGE_SIZE);
+      setPage(nextPage);
+    },
+    [userId]
+  );
+
+  const loadDiscover = useCallback(
+    async (category: CommunityCategoryKey | null, replaceFeed: boolean) => {
+      setErrorMessage(null);
+      const [featuredSound] = await Promise.all([
+        fetchFeaturedCommunitySound(userId),
+        loadFeedPage(0, category, replaceFeed),
+      ]);
+      setFeatured(featuredSound);
+    },
+    [loadFeedPage, userId]
+  );
 
   useFocusEffect(
     useCallback(() => {
-      loadRecentPlays(3)
-        .then(setRecent)
-        .catch(() => setRecent([]));
-    }, [])
+      setLoadingInitial(true);
+      void loadDiscover(selectedCategory, true)
+        .catch((e) => {
+          setErrorMessage(e instanceof Error ? e.message : "Could not load community sounds.");
+          setFeatured(null);
+          setFeed([]);
+        })
+        .finally(() => setLoadingInitial(false));
+    }, [loadDiscover, selectedCategory])
   );
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    setFeatured(pickRandomFeatured());
-    loadRecentPlays(3)
-      .then(setRecent)
-      .catch(() => setRecent([]))
+    void loadDiscover(selectedCategory, true)
+      .catch((e) => {
+        setErrorMessage(e instanceof Error ? e.message : "Could not refresh feed.");
+      })
       .finally(() => setRefreshing(false));
+  }, [loadDiscover, selectedCategory]);
+
+  const onCategoryPress = useCallback(
+    (category: CommunityCategoryKey) => {
+      const next = selectedCategory === category ? null : category;
+      setSelectedCategory(next);
+      setLoadingInitial(true);
+      void loadDiscover(next, true)
+        .catch((e) => {
+          setErrorMessage(e instanceof Error ? e.message : "Could not filter by category.");
+        })
+        .finally(() => setLoadingInitial(false));
+    },
+    [loadDiscover, selectedCategory]
+  );
+
+  const onLoadMore = useCallback(() => {
+    if (loadingMore || !hasMore || loadingInitial) {
+      return;
+    }
+    setLoadingMore(true);
+    void loadFeedPage(page + 1, selectedCategory, false)
+      .catch((e) => {
+        setErrorMessage(e instanceof Error ? e.message : "Could not load more sounds.");
+      })
+      .finally(() => setLoadingMore(false));
+  }, [hasMore, loadFeedPage, loadingInitial, loadingMore, page, selectedCategory]);
+
+  const onPlay = useCallback(async (sound: CommunitySound) => {
+    if (!sound.audio_url) {
+      return;
+    }
+    const playbackId = communityPlaybackId(sound.id);
+    setLoadingSoundId(sound.id);
+    try {
+      const { playing } = await libraryPlayer.toggle(playbackId, sound.audio_url, () => {
+        setPlayingSoundId(null);
+      });
+      setPlayingSoundId(playing ? sound.id : null);
+    } catch (e) {
+      setErrorMessage(e instanceof Error ? e.message : "Playback failed.");
+    } finally {
+      setLoadingSoundId(null);
+    }
   }, []);
 
-  const onPlayFeatured = useCallback(() => {
-    void recordRecentPlay({
-      id: featured.id,
-      name: featured.title,
-      durationSec: featured.durationSec,
-    }).then(() => loadRecentPlays(3).then(setRecent));
-  }, [featured.durationSec, featured.id, featured.title]);
+  const onPulse = useCallback(
+    async (sound: CommunitySound) => {
+      if (!userId) {
+        setPaywallVisible(true);
+        return;
+      }
+      try {
+        const pulsed = await toggleCommunityPulse(userId, sound);
+        const delta = pulsed ? 1 : -1;
+        const patch = {
+          hasPulsed: pulsed,
+          pulseCount: Math.max(0, sound.pulseCount + delta),
+          pulses24h: Math.max(0, sound.pulses24h + delta),
+        };
+        setFeed((prev) => patchSound(prev, sound.id, patch));
+        setFeatured((prev) => (prev?.id === sound.id ? { ...prev, ...patch } : prev));
+      } catch (e) {
+        setErrorMessage(e instanceof Error ? e.message : "Could not pulse sound.");
+      }
+    },
+    [userId]
+  );
 
-  const onPlayRecent = useCallback((play: RecentPlay) => {
-    void recordRecentPlay({
-      id: play.id,
-      name: play.name,
-      durationSec: play.durationSec,
-    }).then(() => loadRecentPlays(3).then(setRecent));
-  }, []);
+  const onSave = useCallback(
+    async (sound: CommunitySound) => {
+      if (!userId) {
+        setPaywallVisible(true);
+        return;
+      }
+      try {
+        const saved = await toggleCommunitySave(userId, sound);
+        const patch = { hasSaved: saved };
+        setFeed((prev) => patchSound(prev, sound.id, patch));
+        setFeatured((prev) => (prev?.id === sound.id ? { ...prev, ...patch } : prev));
+      } catch (e) {
+        setErrorMessage(e instanceof Error ? e.message : "Could not save sound.");
+      }
+    },
+    [userId]
+  );
 
   const styles = useMemo(
     () =>
@@ -88,39 +227,24 @@ export default function HomeScreen() {
           flexGrow: 1,
           gap: theme.spacing.xl,
         },
-        pulseWrap: {
-          width: "100%",
-          marginTop: theme.spacing.xs,
-        },
-        wordmarkRow: {
-          alignItems: "center",
+        header: {
           gap: theme.spacing.xs,
-          marginBottom: theme.spacing.xs,
         },
-        wordmark: {
-          fontSize: 32,
-          fontWeight: "800",
-          letterSpacing: -0.5,
+        title: {
+          ...theme.typography.header,
           color: theme.colors.textPrimary,
-          textAlign: "center",
         },
-        greeting: {
+        subtitle: {
           ...theme.typography.body,
           color: theme.colors.textSecondary,
-          textAlign: "center",
-          marginBottom: theme.spacing.sm,
+          lineHeight: 22,
         },
-        sectionHeading: {
-          ...theme.typography.title,
-          color: theme.colors.primary,
-          marginBottom: theme.spacing.sm,
-        },
-        secondaryLabel: {
+        sectionLabel: {
           ...theme.typography.caption,
           color: `${theme.colors.sky}cc`,
           textTransform: "uppercase",
           letterSpacing: 0.8,
-          marginBottom: theme.spacing.sm,
+          fontWeight: "700",
         },
         featuredOuter: {
           borderRadius: theme.radius.lg,
@@ -130,15 +254,7 @@ export default function HomeScreen() {
         },
         featuredGradient: {
           padding: theme.spacing.xl,
-        },
-        featuredRow: {
-          flexDirection: "row",
-          alignItems: "center",
           gap: theme.spacing.md,
-        },
-        featuredMeta: {
-          flex: 1,
-          gap: 4,
         },
         featuredEyebrow: {
           ...theme.typography.caption,
@@ -150,15 +266,33 @@ export default function HomeScreen() {
         featuredTitle: {
           ...theme.typography.title,
           color: theme.colors.textPrimary,
-          fontSize: 20,
+          fontSize: 22,
         },
-        featuredSub: {
+        featuredMeta: {
           ...theme.typography.body,
           color: `${theme.colors.textPrimary}aa`,
           fontSize: 14,
-          lineHeight: 20,
         },
-        playFab: {
+        featuredPulse: {
+          ...theme.typography.caption,
+          color: theme.colors.sky,
+          fontWeight: "700",
+        },
+        featuredActions: {
+          flexDirection: "row",
+          gap: 10,
+          marginTop: theme.spacing.sm,
+        },
+        featuredActionBtn: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 6,
+          paddingHorizontal: 14,
+          paddingVertical: 8,
+          borderRadius: 999,
+          borderWidth: 1,
+        },
+        featuredPlayBtn: {
           width: 56,
           height: 56,
           borderRadius: 28,
@@ -167,83 +301,78 @@ export default function HomeScreen() {
           borderColor: theme.colors.primary,
           alignItems: "center",
           justifyContent: "center",
-          shadowColor: theme.colors.sky,
-          shadowOpacity: 0.35,
-          shadowRadius: 10,
-          shadowOffset: { width: 0, height: 3 },
-          elevation: 6,
+          marginTop: theme.spacing.sm,
         },
-        moodScrollContent: {
+        categoryScroll: {
           gap: theme.spacing.sm,
           paddingVertical: theme.spacing.xs,
           paddingRight: theme.spacing.md,
         },
-        moodChip: {
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 8,
+        categoryChip: {
           paddingHorizontal: 16,
           paddingVertical: 10,
           borderRadius: theme.radius.full,
           borderWidth: 1,
-          borderColor: `${theme.colors.sky}44`,
-          backgroundColor: `${theme.colors.surface}ee`,
         },
-        moodEmoji: {
-          fontSize: 18,
-        },
-        moodLabel: {
+        categoryLabel: {
           ...theme.typography.body,
           fontWeight: "700",
-          color: theme.colors.textPrimary,
           fontSize: 15,
         },
-        recentList: {
-          gap: theme.spacing.sm,
-        },
-        recentRow: {
-          borderWidth: 1,
-          borderColor: `${theme.colors.sky}33`,
-          borderRadius: theme.radius.md,
-          padding: theme.spacing.md,
-          backgroundColor: theme.colors.surface,
-          flexDirection: "row",
-          alignItems: "center",
+        feed: {
           gap: theme.spacing.md,
         },
-        recentPressed: {
-          opacity: 0.92,
-        },
-        recentTextWrap: {
-          flex: 1,
-          gap: 4,
-        },
-        recentName: {
-          ...theme.typography.body,
-          fontWeight: "700",
-          color: theme.colors.textPrimary,
-        },
-        recentMeta: {
+        error: {
           ...theme.typography.caption,
-          color: theme.colors.textSecondary,
+          color: theme.colors.coral,
         },
-        recentPlayBtn: {
-          width: 44,
-          height: 44,
-          borderRadius: 22,
-          borderWidth: 1,
-          borderColor: `${theme.colors.primary}55`,
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: `${theme.colors.background}99`,
-        },
-        emptyRecent: {
+        empty: {
           ...theme.typography.body,
           color: theme.colors.textSecondary,
           lineHeight: 22,
+          textAlign: "center",
+          paddingVertical: theme.spacing.xl,
+        },
+        loadMoreWrap: {
+          alignItems: "center",
+          paddingVertical: theme.spacing.sm,
+        },
+        paywallBackdrop: {
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          padding: theme.spacing.lg,
+        },
+        paywallBackdropFill: {
+          ...StyleSheet.absoluteFillObject,
+          backgroundColor: "rgba(10,10,15,0.88)",
+        },
+        paywallCard: {
+          width: "100%",
+          borderRadius: theme.radius.lg,
+          padding: theme.spacing.xl,
+          gap: theme.spacing.md,
+          backgroundColor: theme.colors.surface,
+          borderWidth: 1,
+          borderColor: theme.colors.sky,
+          maxWidth: 400,
+          alignSelf: "center",
+          zIndex: 1,
+        },
+        paywallTitle: {
+          ...theme.typography.title,
+          fontSize: 22,
+          color: theme.colors.textPrimary,
+          textAlign: "center",
+        },
+        paywallBody: {
+          ...theme.typography.body,
+          color: theme.colors.textSecondary,
+          textAlign: "center",
+          lineHeight: 22,
         },
       }),
-    [theme]
+    [scrollBottomPad, theme]
   );
 
   const gradientColors = [
@@ -251,6 +380,9 @@ export default function HomeScreen() {
     `${theme.colors.sky}26`,
     theme.colors.surface,
   ] as const;
+
+  const featuredTitle =
+    featured?.title?.trim() || featured?.prompt?.trim() || "Community soundscape";
 
   return (
     <Screen>
@@ -266,92 +398,216 @@ export default function HomeScreen() {
           />
         }
       >
-        <View style={styles.pulseWrap}>
-          <HomeSoundPulseWave />
+        <View style={styles.header}>
+          <Text style={styles.title}>Discover</Text>
+          <Text style={styles.subtitle}>
+            Browse community soundscapes. Free to listen — pulse and save with Premium.
+          </Text>
         </View>
 
-        <View style={styles.wordmarkRow}>
-          <Text style={styles.wordmark}>SoundPulse</Text>
-          <Text style={styles.greeting}>{greeting}</Text>
-        </View>
+        <PlaybackTimer isPlaying={playingSoundId !== null} />
 
-        <View>
-          <Text style={styles.secondaryLabel}>Quick play</Text>
-          <View style={styles.featuredOuter}>
-            <LinearGradient colors={gradientColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.featuredGradient}>
-              <View style={styles.featuredRow}>
-                <View style={styles.featuredMeta}>
-                  <Text style={styles.featuredEyebrow}>Featured Today</Text>
-                  <Text style={styles.featuredTitle} numberOfLines={2}>
-                    {featured.title}
-                  </Text>
-                  <Text style={styles.featuredSub}>
-                    {featured.mood} · {formatDuration(featured.durationSec)}
-                  </Text>
-                </View>
-                <Pressable
-                  onPress={onPlayFeatured}
-                  style={styles.playFab}
-                  accessibilityRole="button"
-                  accessibilityLabel="Play featured soundscape"
-                  android_ripple={{ color: `${theme.colors.sky}44` }}
-                >
-                  <Ionicons name="play" size={28} color={theme.colors.primary} />
-                </Pressable>
-              </View>
-            </LinearGradient>
-          </View>
-        </View>
+        {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
 
-        <View>
-          <Text style={styles.sectionHeading}>Moods</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.moodScrollContent}>
-            {MOODS.map((m) => (
-              <Pressable
-                key={m.key}
-                style={styles.moodChip}
-                accessibilityRole="button"
-                accessibilityLabel={`${m.label} moods`}
-                onPress={() => undefined}
-                android_ripple={{ color: `${theme.colors.primary}33` }}
+        {loadingInitial && feed.length === 0 ? (
+          <ActivityIndicator color={theme.colors.primary} size="large" style={{ marginTop: 24 }} />
+        ) : null}
+
+        {featured ? (
+          <View>
+            <Text style={styles.sectionLabel}>Featured today</Text>
+            <View style={styles.featuredOuter}>
+              <LinearGradient
+                colors={gradientColors}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.featuredGradient}
               >
-                <Text style={styles.moodEmoji}>{m.emoji}</Text>
-                <Text style={styles.moodLabel}>{m.label}</Text>
-              </Pressable>
-            ))}
+                <Text style={styles.featuredEyebrow}>Most pulsed · 24h</Text>
+                <Text style={styles.featuredTitle} numberOfLines={2}>
+                  {featuredTitle}
+                </Text>
+                <Text style={styles.featuredMeta}>
+                  {featured.creatorName} · {formatDuration(featured.duration)}
+                </Text>
+                <Text style={styles.featuredPulse}>{formatPulseCount(featured.pulseCount)}</Text>
+                <Pressable
+                  onPress={() => void onPlay(featured)}
+                  style={styles.featuredPlayBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Play ${featuredTitle}`}
+                >
+                  {loadingSoundId === featured.id ? (
+                    <ActivityIndicator color={theme.colors.primary} />
+                  ) : (
+                    <Ionicons
+                      name={playingSoundId === featured.id ? "pause" : "play"}
+                      size={28}
+                      color={theme.colors.primary}
+                    />
+                  )}
+                </Pressable>
+                <View style={styles.featuredActions}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={featured.hasPulsed ? "Remove pulse" : "Pulse"}
+                    onPress={() => {
+                      if (!isPremium) {
+                        setPaywallVisible(true);
+                        return;
+                      }
+                      void onPulse(featured);
+                    }}
+                    style={[
+                      styles.featuredActionBtn,
+                      {
+                        borderColor: featured.hasPulsed ? theme.colors.primary : `${theme.colors.primary}55`,
+                        backgroundColor: featured.hasPulsed ? `${theme.colors.primary}22` : `${theme.colors.primary}10`,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name={featured.hasPulsed ? "radio" : "pulse-outline"}
+                      size={18}
+                      color={featured.hasPulsed ? theme.colors.primary : theme.colors.textSecondary}
+                    />
+                    <Text
+                      style={{
+                        ...theme.typography.caption,
+                        color: featured.hasPulsed ? theme.colors.primary : theme.colors.textPrimary,
+                        fontWeight: "700",
+                      }}
+                    >
+                      Pulse
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={featured.hasSaved ? "Unsave" : "Save"}
+                    onPress={() => {
+                      if (!isPremium) {
+                        setPaywallVisible(true);
+                        return;
+                      }
+                      void onSave(featured);
+                    }}
+                    style={[
+                      styles.featuredActionBtn,
+                      {
+                        borderColor: featured.hasSaved ? theme.colors.sky : `${theme.colors.sky}55`,
+                        backgroundColor: featured.hasSaved ? `${theme.colors.sky}18` : "transparent",
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name={featured.hasSaved ? "bookmark" : "bookmark-outline"}
+                      size={18}
+                      color={featured.hasSaved ? theme.colors.sky : theme.colors.textSecondary}
+                    />
+                    <Text
+                      style={{
+                        ...theme.typography.caption,
+                        color: featured.hasSaved ? theme.colors.sky : theme.colors.textPrimary,
+                        fontWeight: "700",
+                      }}
+                    >
+                      Save
+                    </Text>
+                  </Pressable>
+                </View>
+              </LinearGradient>
+            </View>
+          </View>
+        ) : !loadingInitial ? (
+          <Text style={styles.empty}>No featured sound yet — be the first to share from Generate.</Text>
+        ) : null}
+
+        <View>
+          <Text style={styles.sectionLabel}>Categories</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScroll}>
+            {COMMUNITY_CATEGORIES.map((cat) => {
+              const active = selectedCategory === cat.key;
+              return (
+                <Pressable
+                  key={cat.key}
+                  onPress={() => onCategoryPress(cat.key)}
+                  style={[
+                    styles.categoryChip,
+                    {
+                      borderColor: active ? theme.colors.sky : `${theme.colors.sky}44`,
+                      backgroundColor: active ? `${theme.colors.primary}33` : `${theme.colors.surface}ee`,
+                    },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${cat.label} category`}
+                >
+                  <Text
+                    style={[
+                      styles.categoryLabel,
+                      { color: active ? theme.colors.textPrimary : theme.colors.textSecondary },
+                    ]}
+                  >
+                    {cat.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </ScrollView>
         </View>
 
-        <Card>
-          <Text style={styles.sectionHeading}>Recent sounds</Text>
-          {recent.length === 0 ? (
-            <Text style={styles.emptyRecent}>Nothing here yet — tap play on Featured Today to seed your recent list.</Text>
-          ) : (
-            <View style={styles.recentList}>
-              {recent.slice(0, 3).map((play) => (
-                <Pressable
-                  key={`${play.id}-${play.playedAt}`}
-                  onPress={() => onPlayRecent(play)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Play ${play.name}`}
-                  style={({ pressed }) => [styles.recentRow, pressed && styles.recentPressed]}
-                  android_ripple={{ color: `${theme.colors.sky}22` }}
-                >
-                  <View style={styles.recentTextWrap}>
-                    <Text style={styles.recentName} numberOfLines={2}>
-                      {play.name}
-                    </Text>
-                    <Text style={styles.recentMeta}>{formatDuration(play.durationSec)}</Text>
-                  </View>
-                  <View style={styles.recentPlayBtn} pointerEvents="none">
-                    <Ionicons name="play-circle" size={32} color={theme.colors.sky} />
-                  </View>
-                </Pressable>
-              ))}
+        <View>
+          <Text style={styles.sectionLabel}>Trending · last 24 hours</Text>
+          <View style={styles.feed}>
+            {feed.map((sound) => (
+              <CommunitySoundCard
+                key={sound.id}
+                sound={sound}
+                isPlaying={playingSoundId === sound.id}
+                isLoading={loadingSoundId === sound.id}
+                isPremium={isPremium}
+                onPlay={() => void onPlay(sound)}
+                onPulse={() => void onPulse(sound)}
+                onSave={() => void onSave(sound)}
+                onUpgrade={() => setPaywallVisible(true)}
+              />
+            ))}
+          </View>
+          {!loadingInitial && feed.length === 0 ? (
+            <Text style={styles.empty}>No community sounds in this category yet.</Text>
+          ) : null}
+          {hasMore && feed.length > 0 ? (
+            <View style={styles.loadMoreWrap}>
+              <Button
+                variant="secondary"
+                label={loadingMore ? "Loading…" : "Load more"}
+                disabled={loadingMore}
+                onPress={onLoadMore}
+              />
             </View>
-          )}
-        </Card>
+          ) : null}
+        </View>
       </ScrollView>
+
+      <Modal visible={paywallVisible} transparent animationType="fade">
+        <View style={styles.paywallBackdrop}>
+          <Pressable style={styles.paywallBackdropFill} onPress={() => setPaywallVisible(false)} />
+          <View style={styles.paywallCard}>
+            <Text style={styles.paywallTitle}>Premium feature</Text>
+            <Text style={styles.paywallBody}>
+              Pulse and save community sounds with a Premium plan. Browsing and playback are free for everyone.
+            </Text>
+            <Button
+              label="View plans · Profile"
+              onPress={() => {
+                setPaywallVisible(false);
+                router.push("/profile");
+              }}
+              style={{ alignSelf: "stretch" }}
+            />
+            <Button variant="secondary" label="Maybe later" onPress={() => setPaywallVisible(false)} />
+          </View>
+        </View>
+      </Modal>
     </Screen>
   );
 }

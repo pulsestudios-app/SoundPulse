@@ -1,0 +1,282 @@
+import { supabase } from "@/src/lib/supabase";
+
+import type { CommunityCategoryKey } from "./categories";
+import type { CommunitySound, CommunitySoundRow, ShareCommunitySoundInput } from "./types";
+
+const PAGE_SIZE = 10;
+
+type PulseRow = { sound_id: string; created_at: string | null };
+type ProfileRow = { id: string; display_name: string | null; email: string | null };
+
+function twentyFourHoursAgoIso(): string {
+  return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+}
+
+function fallbackCreatorName(profile: ProfileRow | undefined, userId: string): string {
+  const display = profile?.display_name?.trim();
+  if (display) {
+    return display;
+  }
+  const email = profile?.email?.trim();
+  if (email) {
+    return email.split("@")[0] ?? "Creator";
+  }
+  return `Creator ${userId.slice(0, 6)}`;
+}
+
+async function fetchPulseStats(soundIds: string[]): Promise<{
+  pulseCounts: Map<string, number>;
+  pulses24h: Map<string, number>;
+}> {
+  const pulseCounts = new Map<string, number>();
+  const pulses24h = new Map<string, number>();
+  if (soundIds.length === 0) {
+    return { pulseCounts, pulses24h };
+  }
+
+  const since = twentyFourHoursAgoIso();
+  const { data, error } = await supabase
+    .from("sound_likes")
+    .select("sound_id, created_at")
+    .in("sound_id", soundIds);
+
+  if (error) {
+    return { pulseCounts, pulses24h };
+  }
+
+  for (const row of (data ?? []) as PulseRow[]) {
+    pulseCounts.set(row.sound_id, (pulseCounts.get(row.sound_id) ?? 0) + 1);
+    if (row.created_at && row.created_at >= since) {
+      pulses24h.set(row.sound_id, (pulses24h.get(row.sound_id) ?? 0) + 1);
+    }
+  }
+
+  return { pulseCounts, pulses24h };
+}
+
+async function fetchUserPulseSaveState(
+  userId: string | undefined,
+  soundIds: string[]
+): Promise<{ pulsed: Set<string>; saved: Set<string> }> {
+  const pulsed = new Set<string>();
+  const saved = new Set<string>();
+  if (!userId || soundIds.length === 0) {
+    return { pulsed, saved };
+  }
+
+  const [likesResult, savesResult] = await Promise.all([
+    supabase.from("sound_likes").select("sound_id").eq("user_id", userId).in("sound_id", soundIds),
+    supabase.from("sound_saves").select("sound_id").eq("user_id", userId).in("sound_id", soundIds),
+  ]);
+
+  for (const row of likesResult.data ?? []) {
+    if (typeof row.sound_id === "string") {
+      pulsed.add(row.sound_id);
+    }
+  }
+  for (const row of savesResult.data ?? []) {
+    if (typeof row.sound_id === "string") {
+      saved.add(row.sound_id);
+    }
+  }
+
+  return { pulsed, saved };
+}
+
+async function enrichCommunitySounds(
+  rows: CommunitySoundRow[],
+  userId: string | undefined
+): Promise<CommunitySound[]> {
+  const soundIds = rows.map((r) => r.id);
+  const userIds = [...new Set(rows.map((r) => r.user_id))];
+
+  const [{ pulseCounts, pulses24h }, { pulsed, saved }, profilesResult] = await Promise.all([
+    fetchPulseStats(soundIds),
+    fetchUserPulseSaveState(userId, soundIds),
+    supabase.from("profiles").select("id, display_name, email").in("id", userIds),
+  ]);
+
+  const profileMap = new Map<string, ProfileRow>();
+  for (const profile of (profilesResult.data ?? []) as ProfileRow[]) {
+    profileMap.set(profile.id, profile);
+  }
+
+  return rows.map((row) => ({
+    ...row,
+    creatorName: fallbackCreatorName(profileMap.get(row.user_id), row.user_id),
+    pulseCount: pulseCounts.get(row.id) ?? 0,
+    pulses24h: pulses24h.get(row.id) ?? 0,
+    hasPulsed: pulsed.has(row.id),
+    hasSaved: saved.has(row.id),
+  }));
+}
+
+function baseCommunityQuery(category: CommunityCategoryKey | null) {
+  let query = supabase
+    .from("community_sounds")
+    .select("*")
+    .eq("is_public", true)
+    .eq("is_hidden", false)
+    .order("created_at", { ascending: false });
+
+  if (category) {
+    query = query.contains("tags", [category]);
+  }
+
+  return query;
+}
+
+export async function fetchCommunityFeedPage(options: {
+  userId?: string;
+  category: CommunityCategoryKey | null;
+  page: number;
+  trending24h?: boolean;
+}): Promise<CommunitySound[]> {
+  const from = options.page * PAGE_SIZE;
+  const to = from + PAGE_SIZE - 1;
+
+  const { data, error } = await baseCommunityQuery(options.category).range(from, to);
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  let sounds = await enrichCommunitySounds((data ?? []) as CommunitySoundRow[], options.userId);
+
+  if (options.trending24h) {
+    sounds = [...sounds].sort((a, b) => b.pulses24h - a.pulses24h || b.pulseCount - a.pulseCount);
+  }
+
+  return sounds;
+}
+
+export async function fetchFeaturedCommunitySound(userId?: string): Promise<CommunitySound | null> {
+  const since = twentyFourHoursAgoIso();
+  const { data: recentPulses, error: pulseError } = await supabase
+    .from("sound_likes")
+    .select("sound_id")
+    .gte("created_at", since);
+
+  if (pulseError) {
+    throw new Error(pulseError.message);
+  }
+
+  const counts = new Map<string, number>();
+  for (const row of recentPulses ?? []) {
+    if (typeof row.sound_id === "string") {
+      counts.set(row.sound_id, (counts.get(row.sound_id) ?? 0) + 1);
+    }
+  }
+
+  let featuredId: string | null = null;
+  let max = 0;
+  for (const [id, count] of counts) {
+    if (count > max) {
+      max = count;
+      featuredId = id;
+    }
+  }
+
+  if (!featuredId) {
+    const { data: fallback, error } = await baseCommunityQuery(null).limit(1);
+    if (error || !fallback?.length) {
+      return null;
+    }
+    const enriched = await enrichCommunitySounds(fallback as CommunitySoundRow[], userId);
+    return enriched[0] ?? null;
+  }
+
+  const { data: sound, error: soundError } = await supabase
+    .from("community_sounds")
+    .select("*")
+    .eq("id", featuredId)
+    .eq("is_public", true)
+    .eq("is_hidden", false)
+    .maybeSingle();
+
+  if (soundError || !sound) {
+    return null;
+  }
+
+  const enriched = await enrichCommunitySounds([sound as CommunitySoundRow], userId);
+  return enriched[0] ?? null;
+}
+
+export async function shareSoundToCommunity(input: ShareCommunitySoundInput): Promise<void> {
+  const { error } = await supabase.from("community_sounds").insert({
+    user_id: input.userId,
+    title: input.title,
+    prompt: input.prompt,
+    audio_url: input.audioUrl,
+    duration: Math.max(0, Math.round(input.duration)),
+    tags: input.tags,
+    is_public: true,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function toggleCommunityPulse(userId: string, sound: CommunitySound): Promise<boolean> {
+  if (sound.hasPulsed) {
+    const { error } = await supabase
+      .from("sound_likes")
+      .delete()
+      .eq("sound_id", sound.id)
+      .eq("user_id", userId);
+    if (error) {
+      throw new Error(error.message);
+    }
+    return false;
+  }
+
+  const { error } = await supabase.from("sound_likes").insert({
+    sound_id: sound.id,
+    user_id: userId,
+  });
+  if (error) {
+    throw new Error(error.message);
+  }
+  return true;
+}
+
+export async function toggleCommunitySave(userId: string, sound: CommunitySound): Promise<boolean> {
+  if (sound.hasSaved) {
+    const { error } = await supabase
+      .from("sound_saves")
+      .delete()
+      .eq("sound_id", sound.id)
+      .eq("user_id", userId);
+    if (error) {
+      throw new Error(error.message);
+    }
+    return false;
+  }
+
+  const { error } = await supabase.from("sound_saves").insert({
+    sound_id: sound.id,
+    user_id: userId,
+  });
+  if (error) {
+    throw new Error(error.message);
+  }
+  return true;
+}
+
+export async function reportCommunitySound(
+  userId: string,
+  soundId: string,
+  reason: string
+): Promise<void> {
+  const { error } = await supabase.from("sound_reports").insert({
+    sound_id: soundId,
+    user_id: userId,
+    reason: reason.trim() || "Community report",
+    status: "pending",
+  });
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export { PAGE_SIZE as COMMUNITY_PAGE_SIZE };
