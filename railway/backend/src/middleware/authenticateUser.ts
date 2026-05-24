@@ -4,7 +4,7 @@ import { supabaseAdmin } from "../lib/supabaseAdmin.js";
 
 declare module "express-serve-static-core" {
   interface Request {
-    user?: { id: string };
+    user?: { id: string; emailConfirmed: boolean };
   }
 }
 
@@ -23,6 +23,9 @@ export async function authenticateUser(req: Request, res: Response, next: NextFu
     return;
   }
 
-  req.user = { id: data.user.id };
+  req.user = {
+    id: data.user.id,
+    emailConfirmed: Boolean(data.user.email_confirmed_at),
+  };
   next();
 }

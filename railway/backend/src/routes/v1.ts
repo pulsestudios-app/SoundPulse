@@ -2,6 +2,7 @@ import express, { type Request, type Response } from "express";
 
 import { supabaseAdmin } from "../lib/supabaseAdmin.js";
 import { authenticateUser } from "../middleware/authenticateUser.js";
+import { authRouter } from "./auth.js";
 import { billingRouter } from "./billing.js";
 import { soundsRouter } from "./sounds.js";
 
@@ -15,6 +16,7 @@ v1Router.get("/health", (_req: Request, res: Response) => {
   });
 });
 
+v1Router.use("/auth", authRouter);
 v1Router.use("/billing", billingRouter);
 v1Router.use("/sounds", soundsRouter);
 

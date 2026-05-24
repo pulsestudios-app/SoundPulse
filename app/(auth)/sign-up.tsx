@@ -5,7 +5,6 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { signUpWithEmail } from "@/src/features/auth/api";
 import { signInWithGoogle } from "@/src/features/auth/oauth";
 import { GoogleSignInButton } from "@/src/components/auth/GoogleSignInButton";
-import { needsEmailVerification } from "@/src/features/auth/emailVerification";
 import { seedNewUserProfile } from "@/src/features/auth/signupProfile";
 import { Button } from "@/src/components/core/Button";
 import { Input } from "@/src/components/core/Input";
@@ -112,32 +111,25 @@ export default function SignUpScreen() {
     }
 
     setIsSubmitting(true);
-    const { data, error } = await signUpWithEmail(email.trim(), password);
+    const result = await signUpWithEmail(email.trim(), password);
     setIsSubmitting(false);
 
-    if (error) {
-      setErrorMessage(error.message);
+    if (!result.ok) {
+      setErrorMessage(result.error ?? "Sign-up failed. Please try again.");
       return;
     }
 
-    const user = data.user;
-    if (user?.id && data.session && !needsEmailVerification(user)) {
+    if (result.userId) {
       try {
-        await seedNewUserProfile(user.id);
+        await seedNewUserProfile(result.userId);
       } catch (trialError) {
         console.error("[sign-up] Failed to seed profile", trialError);
       }
     }
 
-    const mustVerify = user && (needsEmailVerification(user) || !data.session);
-    if (mustVerify) {
+    if (result.needsEmailVerification) {
       const em = email.trim();
       router.replace(`/(auth)/verify-email?email=${encodeURIComponent(em)}` as never);
-      return;
-    }
-
-    if (user?.id) {
-      router.replace("/(tabs)/home");
       return;
     }
 

@@ -1,10 +1,11 @@
+import { sanitizeDisplayName } from "@/src/lib/sanitize";
 import { supabase } from "@/src/lib/supabase";
 
 const DISPLAY_NAME_MIN = 2;
 const DISPLAY_NAME_MAX = 32;
 
 export function normalizeDisplayName(value: string): string {
-  return value.trim().replace(/\s+/g, " ");
+  return sanitizeDisplayName(value);
 }
 
 export function validateDisplayName(value: string): string | null {
@@ -14,6 +15,9 @@ export function validateDisplayName(value: string): string | null {
   }
   if (normalized.length > DISPLAY_NAME_MAX) {
     return `Name must be ${DISPLAY_NAME_MAX} characters or fewer.`;
+  }
+  if (normalized !== value.trim().replace(/\s+/g, " ")) {
+    return "Name contains invalid characters.";
   }
   return null;
 }
@@ -56,45 +60,4 @@ export async function updateProfileDisplayName(userId: string, name: string): Pr
     }
     throw new Error(error.message);
   }
-}
-
-function guessContentType(uri: string): string {
-  const lower = uri.toLowerCase();
-  if (lower.endsWith(".png")) {
-    return "image/png";
-  }
-  if (lower.endsWith(".webp")) {
-    return "image/webp";
-  }
-  return "image/jpeg";
-}
-
-export async function uploadProfileAvatar(userId: string, localUri: string): Promise<string> {
-  const extension = guessContentType(localUri) === "image/png" ? "png" : "jpg";
-  const filePath = `${userId}/avatar.${extension}`;
-  const response = await fetch(localUri);
-  const blob = await response.blob();
-
-  const { error: uploadError } = await supabase.storage.from("avatars").upload(filePath, blob, {
-    upsert: true,
-    contentType: guessContentType(localUri),
-  });
-
-  if (uploadError) {
-    throw new Error(uploadError.message);
-  }
-
-  const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
-  const avatarUrl = `${data.publicUrl}?t=${Date.now()}`;
-
-  const { error: profileError } = await supabase
-    .from("profiles")
-    .update({ avatar_url: avatarUrl })
-    .eq("id", userId);
-
-  if (profileError) {
-    throw new Error(profileError.message);
-  }
-
-  return avatarUrl;
 }

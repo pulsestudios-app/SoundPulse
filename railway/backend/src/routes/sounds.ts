@@ -2,6 +2,7 @@ import express, { type Request, type Response } from "express";
 
 import { authenticateUser } from "../middleware/authenticateUser.js";
 import { generateRateLimit } from "../middleware/generateRateLimit.js";
+import { requireVerifiedEmail } from "../middleware/requireVerifiedEmail.js";
 import {
   ElevenLabsConfigError,
   ElevenLabsGenerationError,
@@ -30,7 +31,12 @@ function clampDuration(raw: unknown): number {
   return Math.min(MAX_DURATION_SEC, Math.max(MIN_DURATION_SEC, n));
 }
 
-soundsRouter.post("/generate", authenticateUser, generateRateLimit, async (req: Request, res: Response) => {
+soundsRouter.post(
+  "/generate",
+  authenticateUser,
+  requireVerifiedEmail,
+  generateRateLimit,
+  async (req: Request, res: Response) => {
   const authUserId = req.user?.id;
   if (!authUserId) {
     return res.status(401).json({ error: "Unauthorized" });

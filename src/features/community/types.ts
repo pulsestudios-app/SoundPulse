@@ -17,7 +17,6 @@ export type CommunitySoundRow = {
 
 export type CommunitySound = CommunitySoundRow & {
   creatorName: string;
-  creatorAvatarUrl: string | null;
   pulseCount: number;
   pulses24h: number;
   hasPulsed: boolean;
@@ -40,8 +39,6 @@ export type ShareCommunitySoundInput = {
 export type CreatorProfile = {
   userId: string;
   displayName: string;
-  email: string | null;
-  avatarUrl: string | null;
   soundsShared: number;
   totalPulses: number;
   sounds: CommunitySound[];

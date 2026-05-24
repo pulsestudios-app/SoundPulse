@@ -30,16 +30,6 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": [
-      "expo-router",
-      "expo-asset",
-      "expo-secure-store",
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "Allow SoundPulse to access your photos for profile pictures."
-        }
-      ]
-    ]
+    "plugins": ["expo-router", "expo-asset", "expo-secure-store"]
   }
 }

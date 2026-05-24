@@ -25,6 +25,7 @@ const GENERATION_ERROR_MESSAGES: Record<string, string> = {
   RATE_LIMIT_EXCEEDED: "Too many generation requests. Please wait a minute and try again.",
   GENERATION_RESERVE_FAILED:
     "We could not record your generation usage. Please try again in a moment.",
+  EMAIL_NOT_VERIFIED: "Verify your email before generating AI soundscapes.",
 };
 
 function messageForGenerationError(code: string): string {

@@ -391,11 +391,7 @@ export default function CreatorProfileScreen() {
         ) : profile ? (
           <>
             <View style={styles.hero}>
-              <ProfileAvatar
-                name={profile.displayName}
-                avatarUrl={profile.avatarUrl}
-                size={72}
-              />
+              <ProfileAvatar name={profile.displayName} size={72} />
               <Text style={styles.name}>{profile.displayName}</Text>
 
               <View style={styles.statsRow}>

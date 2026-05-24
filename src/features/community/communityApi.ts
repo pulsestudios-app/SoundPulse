@@ -1,3 +1,4 @@
+import { sanitizeSoundTitle } from "@/src/lib/sanitize";
 import { supabase } from "@/src/lib/supabase";
 
 import type { SavedLayerSnapshot } from "@/src/features/mixer/layerPresets";
@@ -13,7 +14,7 @@ import type {
 const PAGE_SIZE = 10;
 
 type PulseRow = { sound_id: string; created_at: string | null };
-type PublicProfileRow = { id: string; display_name: string | null; avatar_url: string | null };
+type PublicProfileRow = { id: string; display_name: string | null };
 
 function twentyFourHoursAgoIso(): string {
   return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -106,7 +107,7 @@ async function enrichCommunitySounds(
   const [{ pulseCounts, pulses24h }, { pulsed, saved }, profilesResult] = await Promise.all([
     fetchPulseStats(soundIds),
     fetchUserPulseSaveState(userId, soundIds),
-    supabase.from("profiles_public").select("id, display_name, avatar_url").in("id", userIds),
+    supabase.from("profiles_public").select("id, display_name").in("id", userIds),
   ]);
 
   const profileMap = new Map<string, PublicProfileRow>();
@@ -117,7 +118,6 @@ async function enrichCommunitySounds(
   return rows.map((row) => ({
     ...row,
     creatorName: fallbackCreatorName(profileMap.get(row.user_id), row.user_id),
-    creatorAvatarUrl: profileMap.get(row.user_id)?.avatar_url?.trim() || null,
     pulseCount: pulseCounts.get(row.id) ?? 0,
     pulses24h: pulses24h.get(row.id) ?? 0,
     hasPulsed: pulsed.has(row.id),
@@ -240,10 +240,11 @@ export async function shareMixToCommunity(input: {
   savedMixId: string;
   tags?: CommunityCategoryKey[];
 }): Promise<void> {
+  const mixName = sanitizeSoundTitle(input.name);
   const { error } = await supabase.from("community_sounds").insert({
     user_id: input.userId,
-    title: input.name,
-    prompt: `Layer mix · ${input.name}`,
+    title: mixName,
+    prompt: `Layer mix · ${mixName}`,
     kind: "mix",
     mix_layers: input.layers,
     saved_mix_id: input.savedMixId,
@@ -289,9 +290,10 @@ export async function deleteCommunitySoundCompletely(userId: string, soundId: st
 }
 
 export async function shareSoundToCommunity(input: ShareCommunitySoundInput): Promise<void> {
+  const title = sanitizeSoundTitle(input.title);
   const { error } = await supabase.from("community_sounds").insert({
     user_id: input.userId,
-    title: input.title,
+    title,
     prompt: input.prompt,
     audio_url: input.audioUrl,
     duration: Math.max(0, Math.round(input.duration)),
@@ -416,7 +418,7 @@ export async function fetchCreatorProfile(
   const [profileResult, soundsResult] = await Promise.all([
     supabase
       .from("profiles_public")
-      .select("id, display_name, avatar_url")
+      .select("id, display_name")
       .eq("id", creatorId)
       .maybeSingle(),
     supabase
@@ -456,8 +458,6 @@ export async function fetchCreatorProfile(
   return {
     userId: creatorId,
     displayName: fallbackCreatorName(profile ?? undefined, creatorId),
-    email: null,
-    avatarUrl: profile?.avatar_url?.trim() || null,
     soundsShared: soundRows.length,
     totalPulses,
     sounds,

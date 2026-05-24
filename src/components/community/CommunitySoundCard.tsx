@@ -135,11 +135,7 @@ export function CommunitySoundCard({
                 {title}
               </Text>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <ProfileAvatar
-                  name={sound.creatorName}
-                  avatarUrl={sound.creatorAvatarUrl}
-                  size={22}
-                />
+                <ProfileAvatar name={sound.creatorName} size={22} />
                 <Text style={{ ...theme.typography.caption, color: theme.colors.textSecondary, flex: 1 }}>
                   {sound.creatorName} · {durationLabel}
                 </Text>

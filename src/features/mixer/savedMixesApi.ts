@@ -1,3 +1,4 @@
+import { sanitizeSoundTitle } from "@/src/lib/sanitize";
 import { supabase } from "@/src/lib/supabase";
 
 import type { SavedLayerSnapshot } from "./layerPresets";
@@ -36,7 +37,7 @@ export async function saveUserMix(input: {
     .from("saved_mixes")
     .insert({
       user_id: input.userId,
-      name: input.name.trim(),
+      name: sanitizeSoundTitle(input.name),
       layers: input.layers,
     })
     .select("id,user_id,name,layers,created_at")

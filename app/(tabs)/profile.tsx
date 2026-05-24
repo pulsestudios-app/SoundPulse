@@ -1,5 +1,4 @@
 import { Ionicons } from "@expo/vector-icons";
-import * as ImagePicker from "expo-image-picker";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
@@ -27,10 +26,7 @@ import { signOut } from "@/src/features/auth/api";
 import { useAuthSession } from "@/src/features/auth/useAuthSession";
 import { submitFeedback, type FeedbackType } from "@/src/features/feedback/feedbackApi";
 import { FREE_AI_GENERATIONS_PER_MONTH } from "@/src/features/generate/entitlementsStore";
-import {
-  updateProfileDisplayName,
-  uploadProfileAvatar,
-} from "@/src/features/profile/profileApi";
+import { updateProfileDisplayName } from "@/src/features/profile/profileApi";
 import { useScrollContentBottomPad } from "@/src/hooks/useScrollBottomInset";
 import { supabase } from "@/src/lib/supabase";
 import { useAppTheme } from "@/src/theme";
@@ -38,7 +34,6 @@ import { useAppTheme } from "@/src/theme";
 type ProfileRow = {
   display_name: string | null;
   email: string | null;
-  avatar_url: string | null;
 };
 
 type SubscriptionRow = {
@@ -50,7 +45,6 @@ type SubscriptionRow = {
 type ProfileData = {
   displayName: string;
   email: string;
-  avatarUrl: string | null;
   subscription: SubscriptionRow | null;
   generatedThisMonth: number;
 };
@@ -132,7 +126,6 @@ export default function ProfileScreen() {
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [savingName, setSavingName] = useState(false);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [feedbackVisible, setFeedbackVisible] = useState(false);
   const [feedbackType, setFeedbackType] = useState<FeedbackType>("content");
   const [feedbackMessage, setFeedbackMessage] = useState("");
@@ -165,30 +158,10 @@ export default function ProfileScreen() {
           borderColor: `${theme.colors.primary}55`,
           gap: theme.spacing.md,
         },
-        avatar: {
-          width: 62,
-          height: 62,
-          borderRadius: 31,
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: `${theme.colors.primary}26`,
-          borderWidth: 1,
-          borderColor: `${theme.colors.primary}88`,
-        },
         profileTop: {
           flexDirection: "row",
           alignItems: "center",
           gap: theme.spacing.md,
-        },
-        avatarWrap: {
-          position: "relative",
-        },
-        avatarLoading: {
-          ...StyleSheet.absoluteFillObject,
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: "#0a0a0fcc",
-          borderRadius: 31,
         },
         identity: {
           flex: 1,
@@ -441,7 +414,7 @@ export default function ProfileScreen() {
       const [profileResult, subscriptionResult, soundsResult] = await Promise.all([
         supabase
           .from("profiles")
-          .select("display_name,email,avatar_url")
+          .select("display_name,email")
           .eq("id", user.id)
           .maybeSingle<ProfileRow>(),
         supabase
@@ -471,7 +444,6 @@ export default function ProfileScreen() {
       setProfileData({
         displayName,
         email,
-        avatarUrl: profile?.avatar_url?.trim() || null,
         subscription,
         generatedThisMonth: soundsResult.count ?? 0,
       });
@@ -553,41 +525,6 @@ export default function ProfileScreen() {
     }
   }, [draftName, session?.user?.id]);
 
-  const pickAvatar = useCallback(async () => {
-    const userId = session?.user?.id;
-    if (!userId) {
-      return;
-    }
-
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert("Photos access", "Allow photo access to set a profile picture.");
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.85,
-    });
-
-    if (result.canceled || !result.assets[0]?.uri) {
-      return;
-    }
-
-    setUploadingAvatar(true);
-    setErrorMessage(null);
-    try {
-      const avatarUrl = await uploadProfileAvatar(userId, result.assets[0].uri);
-      setProfileData((prev) => (prev ? { ...prev, avatarUrl } : prev));
-    } catch (e) {
-      setErrorMessage(e instanceof Error ? e.message : "Could not upload photo.");
-    } finally {
-      setUploadingAvatar(false);
-    }
-  }, [session?.user?.id]);
-
   return (
     <Screen>
       <ScrollView
@@ -616,19 +553,10 @@ export default function ProfileScreen() {
           <>
             <Card style={styles.profileCard}>
               <View style={styles.profileTop}>
-                <View style={styles.avatarWrap}>
-                  <ProfileAvatar
-                    name={profileData?.displayName ?? "SoundPulse listener"}
-                    avatarUrl={profileData?.avatarUrl}
-                    size={62}
-                    onPress={() => void pickAvatar()}
-                  />
-                  {uploadingAvatar ? (
-                    <View style={styles.avatarLoading}>
-                      <ActivityIndicator color={theme.colors.primary} />
-                    </View>
-                  ) : null}
-                </View>
+                <ProfileAvatar
+                  name={profileData?.displayName ?? "SoundPulse listener"}
+                  size={62}
+                />
                 <View style={styles.identity}>
                   {editingName ? (
                     <>

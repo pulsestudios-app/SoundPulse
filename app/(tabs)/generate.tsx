@@ -241,9 +241,15 @@ export default function GenerateScreen() {
       showToast("Sound saved to library");
     } catch (e) {
       if (e instanceof GenerateSoundscapeError) {
-        if (e.code === "GENERATION_LIMIT_REACHED" || e.code === "PAID_PLAN_REQUIRED") {
-          setPaywallMessage(e.message);
-          setPaywallVisible(true);
+        if (
+          e.code === "GENERATION_LIMIT_REACHED" ||
+          e.code === "PAID_PLAN_REQUIRED" ||
+          e.code === "EMAIL_NOT_VERIFIED"
+        ) {
+          if (e.code !== "EMAIL_NOT_VERIFIED") {
+            setPaywallMessage(e.message);
+            setPaywallVisible(true);
+          }
         }
         setAiError(e.message);
       } else {

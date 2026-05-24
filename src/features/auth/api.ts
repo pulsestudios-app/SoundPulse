@@ -1,3 +1,4 @@
+import { ensureBackendUrl, backendJsonHeaders } from "@/src/lib/backend";
 import { supabase } from "@/src/lib/supabase";
 
 export async function signInWithEmail(email: string, password: string) {
@@ -9,14 +10,55 @@ export function getAuthEmailRedirectUrl(): string {
   return "soundpulse://auth/sign-in";
 }
 
-export async function signUpWithEmail(email: string, password: string) {
-  return supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      emailRedirectTo: getAuthEmailRedirectUrl(),
-    },
+export type SignUpResult = {
+  ok: boolean;
+  userId: string | null;
+  needsEmailVerification: boolean;
+  error?: string;
+  errorCode?: string;
+};
+
+export async function signUpWithEmail(email: string, password: string): Promise<SignUpResult> {
+  const baseUrl = ensureBackendUrl();
+  const res = await fetch(`${baseUrl}/v1/auth/signup`, {
+    method: "POST",
+    headers: backendJsonHeaders(),
+    body: JSON.stringify({
+      email: email.trim().toLowerCase(),
+      password,
+      website: "",
+    }),
   });
+
+  const text = await res.text();
+  let parsed: {
+    ok?: boolean;
+    userId?: string | null;
+    needsEmailVerification?: boolean;
+    error?: string;
+    message?: string;
+  } = {};
+  try {
+    parsed = JSON.parse(text) as typeof parsed;
+  } catch {
+    /* non-json */
+  }
+
+  if (!res.ok) {
+    return {
+      ok: false,
+      userId: null,
+      needsEmailVerification: false,
+      error: parsed.message ?? parsed.error ?? `Sign-up failed (${res.status})`,
+      errorCode: typeof parsed.error === "string" ? parsed.error : undefined,
+    };
+  }
+
+  return {
+    ok: true,
+    userId: parsed.userId ?? null,
+    needsEmailVerification: parsed.needsEmailVerification ?? true,
+  };
 }
 
 export async function resendSignupConfirmationEmail(email: string) {
