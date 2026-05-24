@@ -33,7 +33,13 @@
     "plugins": [
       "expo-router",
       "expo-asset",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow SoundPulse to access your photos for profile pictures."
+        }
+      ]
     ]
   }
 }

@@ -16,16 +16,21 @@ import {
 import { PlaybackTimer } from "@/src/components/audio/PlaybackTimer";
 import { CommunitySoundCard } from "@/src/components/community/CommunitySoundCard";
 import { Button } from "@/src/components/core/Button";
+import { ProfileAvatar } from "@/src/components/profile/ProfileAvatar";
 import { Screen } from "@/src/components/core/Screen";
 import { libraryPlayer } from "@/src/features/audio/libraryPlayer";
 import { onPlaybackStopped } from "@/src/features/audio/playbackRegistry";
 import { useAuthSession } from "@/src/features/auth/useAuthSession";
 import {
+  deleteCommunitySoundCompletely,
   fetchCreatorProfile,
+  removeCommunitySoundFromDiscover,
   toggleCommunityPulse,
   toggleCommunitySave,
 } from "@/src/features/community/communityApi";
-import type { CommunitySound, CreatorProfile } from "@/src/features/community/types";
+import { isCommunityMix, type CommunitySound, CreatorProfile } from "@/src/features/community/types";
+import type { SavedLayerSnapshot } from "@/src/features/mixer/layerPresets";
+import { setPendingMixLoad } from "@/src/features/mixer/pendingMixLoad";
 import { useIsPremium } from "@/src/features/subscription/useIsPremium";
 import { useScrollContentBottomPad } from "@/src/hooks/useScrollBottomInset";
 import { useAppTheme } from "@/src/theme";
@@ -97,24 +102,93 @@ export default function CreatorProfileScreen() {
       .finally(() => setRefreshing(false));
   }, [loadProfile]);
 
-  const onPlay = useCallback(async (sound: CommunitySound) => {
-    if (!sound.audio_url) {
-      return;
-    }
-    setLoadingSoundId(sound.id);
-    try {
-      const { playing } = await libraryPlayer.toggle(
-        communityPlaybackId(sound.id),
-        sound.audio_url,
-        () => setPlayingSoundId(null)
-      );
-      setPlayingSoundId(playing ? sound.id : null);
-    } catch (e) {
-      setErrorMessage(e instanceof Error ? e.message : "Playback failed.");
-    } finally {
-      setLoadingSoundId(null);
-    }
-  }, []);
+  const onPlay = useCallback(
+    async (sound: CommunitySound) => {
+      if (isCommunityMix(sound)) {
+        const layers = (sound.mix_layers ?? []) as SavedLayerSnapshot[];
+        if (layers.length === 0) {
+          setErrorMessage("This mix could not be loaded.");
+          return;
+        }
+        setPendingMixLoad(layers);
+        router.push("/(tabs)/generate?mode=mixer");
+        return;
+      }
+
+      if (!sound.audio_url) {
+        return;
+      }
+      setLoadingSoundId(sound.id);
+      try {
+        const { playing } = await libraryPlayer.toggle(
+          communityPlaybackId(sound.id),
+          sound.audio_url,
+          () => setPlayingSoundId(null)
+        );
+        setPlayingSoundId(playing ? sound.id : null);
+      } catch (e) {
+        setErrorMessage(e instanceof Error ? e.message : "Playback failed.");
+      } finally {
+        setLoadingSoundId(null);
+      }
+    },
+    [router]
+  );
+
+  const onManageOwnSound = useCallback(
+    (sound: CommunitySound) => {
+      if (!viewerId || sound.user_id !== viewerId) {
+        return;
+      }
+
+      Alert.alert("Manage sound", "Choose what to do with this community post.", [
+        {
+          text: "Remove from Discover",
+          onPress: () => {
+            void removeCommunitySoundFromDiscover(viewerId, sound.id)
+              .then(() => {
+                setProfile((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        soundsShared: Math.max(0, prev.soundsShared - 1),
+                        sounds: prev.sounds.filter((row) => row.id !== sound.id),
+                      }
+                    : prev
+                );
+              })
+              .catch((e) => {
+                setErrorMessage(e instanceof Error ? e.message : "Could not remove sound.");
+              });
+          },
+        },
+        {
+          text: "Delete completely",
+          style: "destructive",
+          onPress: () => {
+            void deleteCommunitySoundCompletely(viewerId, sound.id)
+              .then(() => {
+                setProfile((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        soundsShared: Math.max(0, prev.soundsShared - 1),
+                        totalPulses: Math.max(0, prev.totalPulses - sound.pulseCount),
+                        sounds: prev.sounds.filter((row) => row.id !== sound.id),
+                      }
+                    : prev
+                );
+              })
+              .catch((e) => {
+                setErrorMessage(e instanceof Error ? e.message : "Could not delete sound.");
+              });
+          },
+        },
+        { text: "Cancel", style: "cancel" },
+      ]);
+    },
+    [viewerId]
+  );
 
   const onPulse = useCallback(
     async (sound: CommunitySound) => {
@@ -212,16 +286,6 @@ export default function CreatorProfileScreen() {
           padding: theme.spacing.xl,
           gap: theme.spacing.md,
           alignItems: "center",
-        },
-        avatar: {
-          width: 72,
-          height: 72,
-          borderRadius: 36,
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: `${theme.colors.primary}26`,
-          borderWidth: 1,
-          borderColor: `${theme.colors.primary}88`,
         },
         name: {
           ...theme.typography.title,
@@ -327,9 +391,11 @@ export default function CreatorProfileScreen() {
         ) : profile ? (
           <>
             <View style={styles.hero}>
-              <View style={styles.avatar}>
-                <Ionicons name="person" size={34} color={theme.colors.primary} />
-              </View>
+              <ProfileAvatar
+                name={profile.displayName}
+                avatarUrl={profile.avatarUrl}
+                size={72}
+              />
               <Text style={styles.name}>{profile.displayName}</Text>
               {profile.email ? <Text style={styles.email}>{profile.email}</Text> : null}
 
@@ -369,10 +435,12 @@ export default function CreatorProfileScreen() {
                     isPlaying={playingSoundId === sound.id}
                     isLoading={loadingSoundId === sound.id}
                     isPremium={isPremium}
+                    isOwner={!!viewerId && sound.user_id === viewerId}
                     onPlay={() => void onPlay(sound)}
                     onPulse={() => void onPulse(sound)}
                     onSave={() => void onSave(sound)}
                     onUpgrade={() => router.push("/upgrade")}
+                    onManageOwn={() => onManageOwnSound(sound)}
                   />
                 ))
               )}

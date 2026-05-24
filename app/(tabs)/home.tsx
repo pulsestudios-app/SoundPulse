@@ -5,6 +5,7 @@ import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -22,14 +23,18 @@ import { onPlaybackStopped } from "@/src/features/audio/playbackRegistry";
 import { useAuthSession } from "@/src/features/auth/useAuthSession";
 import {
   COMMUNITY_PAGE_SIZE,
+  deleteCommunitySoundCompletely,
   fetchCommunityFeedPage,
   fetchFeaturedCommunitySound,
+  removeCommunitySoundFromDiscover,
   toggleCommunityPulse,
   toggleCommunitySave,
 } from "@/src/features/community/communityApi";
 import { COMMUNITY_CATEGORIES, type CommunityCategoryKey } from "@/src/features/community/categories";
 import { formatPulseCount } from "@/src/features/community/formatPulses";
-import type { CommunitySound } from "@/src/features/community/types";
+import { isCommunityMix, type CommunitySound } from "@/src/features/community/types";
+import type { SavedLayerSnapshot } from "@/src/features/mixer/layerPresets";
+import { setPendingMixLoad } from "@/src/features/mixer/pendingMixLoad";
 import { useIsPremium } from "@/src/features/subscription/useIsPremium";
 import { useScrollContentBottomPad } from "@/src/hooks/useScrollBottomInset";
 import { useAppTheme } from "@/src/theme";
@@ -170,23 +175,79 @@ export default function HomeScreen() {
       .finally(() => setLoadingMore(false));
   }, [hasMore, loadFeedPage, loadingInitial, loadingMore, page, selectedCategory]);
 
-  const onPlay = useCallback(async (sound: CommunitySound) => {
-    if (!sound.audio_url) {
-      return;
+  const removeSoundFromLists = useCallback((soundId: string) => {
+    setFeed((prev) => prev.filter((sound) => sound.id !== soundId));
+    setFeatured((prev) => (prev?.id === soundId ? null : prev));
+    if (playingSoundId === soundId) {
+      setPlayingSoundId(null);
     }
-    const playbackId = communityPlaybackId(sound.id);
-    setLoadingSoundId(sound.id);
-    try {
-      const { playing } = await libraryPlayer.toggle(playbackId, sound.audio_url, () => {
-        setPlayingSoundId(null);
-      });
-      setPlayingSoundId(playing ? sound.id : null);
-    } catch (e) {
-      setErrorMessage(e instanceof Error ? e.message : "Playback failed.");
-    } finally {
-      setLoadingSoundId(null);
-    }
-  }, []);
+  }, [playingSoundId]);
+
+  const onPlay = useCallback(
+    async (sound: CommunitySound) => {
+      if (isCommunityMix(sound)) {
+        const layers = (sound.mix_layers ?? []) as SavedLayerSnapshot[];
+        if (layers.length === 0) {
+          setErrorMessage("This mix could not be loaded.");
+          return;
+        }
+        setPendingMixLoad(layers);
+        router.push("/(tabs)/generate?mode=mixer");
+        return;
+      }
+
+      if (!sound.audio_url) {
+        return;
+      }
+      const playbackId = communityPlaybackId(sound.id);
+      setLoadingSoundId(sound.id);
+      try {
+        const { playing } = await libraryPlayer.toggle(playbackId, sound.audio_url, () => {
+          setPlayingSoundId(null);
+        });
+        setPlayingSoundId(playing ? sound.id : null);
+      } catch (e) {
+        setErrorMessage(e instanceof Error ? e.message : "Playback failed.");
+      } finally {
+        setLoadingSoundId(null);
+      }
+    },
+    [router]
+  );
+
+  const onManageOwnSound = useCallback(
+    (sound: CommunitySound) => {
+      if (!userId || sound.user_id !== userId) {
+        return;
+      }
+
+      Alert.alert("Manage sound", "Choose what to do with this community post.", [
+        {
+          text: "Remove from Discover",
+          onPress: () => {
+            void removeCommunitySoundFromDiscover(userId, sound.id)
+              .then(() => removeSoundFromLists(sound.id))
+              .catch((e) => {
+                setErrorMessage(e instanceof Error ? e.message : "Could not remove sound.");
+              });
+          },
+        },
+        {
+          text: "Delete completely",
+          style: "destructive",
+          onPress: () => {
+            void deleteCommunitySoundCompletely(userId, sound.id)
+              .then(() => removeSoundFromLists(sound.id))
+              .catch((e) => {
+                setErrorMessage(e instanceof Error ? e.message : "Could not delete sound.");
+              });
+          },
+        },
+        { text: "Cancel", style: "cancel" },
+      ]);
+    },
+    [removeSoundFromLists, userId]
+  );
 
   const onPulse = useCallback(
     async (sound: CommunitySound) => {
@@ -208,7 +269,7 @@ export default function HomeScreen() {
         setErrorMessage(e instanceof Error ? e.message : "Could not pulse sound.");
       }
     },
-    [userId]
+    [openUpgrade, userId]
   );
 
   const onSave = useCallback(
@@ -226,7 +287,7 @@ export default function HomeScreen() {
         setErrorMessage(e instanceof Error ? e.message : "Could not save sound.");
       }
     },
-    [userId]
+    [openUpgrade, userId]
   );
 
   const styles = useMemo(
@@ -556,11 +617,13 @@ export default function HomeScreen() {
                 isPlaying={playingSoundId === sound.id}
                 isLoading={loadingSoundId === sound.id}
                 isPremium={isPremium}
+                isOwner={!!userId && sound.user_id === userId}
                 onPlay={() => void onPlay(sound)}
                 onPulse={() => void onPulse(sound)}
                 onSave={() => void onSave(sound)}
                 onUpgrade={openUpgrade}
                 onViewProfile={() => openCreatorProfile(sound.user_id)}
+                onManageOwn={() => onManageOwnSound(sound)}
               />
             ))}
           </View>

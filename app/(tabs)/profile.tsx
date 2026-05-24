@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import {
@@ -6,6 +7,7 @@ import {
   Alert,
   Linking,
   Platform,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -15,10 +17,16 @@ import {
 
 import { Button } from "@/src/components/core/Button";
 import { Card } from "@/src/components/core/Card";
+import { Input } from "@/src/components/core/Input";
+import { ProfileAvatar } from "@/src/components/profile/ProfileAvatar";
 import { Screen } from "@/src/components/core/Screen";
 import { signOut } from "@/src/features/auth/api";
 import { useAuthSession } from "@/src/features/auth/useAuthSession";
 import { FREE_AI_GENERATIONS_PER_MONTH } from "@/src/features/generate/entitlementsStore";
+import {
+  updateProfileDisplayName,
+  uploadProfileAvatar,
+} from "@/src/features/profile/profileApi";
 import { useScrollContentBottomPad } from "@/src/hooks/useScrollBottomInset";
 import { supabase } from "@/src/lib/supabase";
 import { useAppTheme } from "@/src/theme";
@@ -26,6 +34,7 @@ import { useAppTheme } from "@/src/theme";
 type ProfileRow = {
   display_name: string | null;
   email: string | null;
+  avatar_url: string | null;
 };
 
 type SubscriptionRow = {
@@ -37,6 +46,7 @@ type SubscriptionRow = {
 type ProfileData = {
   displayName: string;
   email: string;
+  avatarUrl: string | null;
   subscription: SubscriptionRow | null;
   generatedThisMonth: number;
 };
@@ -115,6 +125,10 @@ export default function ProfileScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState(false);
+  const [draftName, setDraftName] = useState("");
+  const [savingName, setSavingName] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   const styles = useMemo(
     () =>
@@ -155,10 +169,40 @@ export default function ProfileScreen() {
           alignItems: "center",
           gap: theme.spacing.md,
         },
+        avatarWrap: {
+          position: "relative",
+        },
+        avatarLoading: {
+          ...StyleSheet.absoluteFillObject,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: "#0a0a0fcc",
+          borderRadius: 31,
+        },
         identity: {
           flex: 1,
           minWidth: 0,
           gap: 4,
+        },
+        nameRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 8,
+        },
+        editBtn: {
+          width: 34,
+          height: 34,
+          borderRadius: 17,
+          alignItems: "center",
+          justifyContent: "center",
+          borderWidth: 1,
+          borderColor: `${theme.colors.primary}55`,
+          backgroundColor: `${theme.colors.primary}14`,
+        },
+        nameEditActions: {
+          flexDirection: "row",
+          gap: theme.spacing.sm,
+          marginTop: theme.spacing.sm,
         },
         name: {
           ...theme.typography.title,
@@ -284,7 +328,7 @@ export default function ProfileScreen() {
       const [profileResult, subscriptionResult, soundsResult] = await Promise.all([
         supabase
           .from("profiles")
-          .select("display_name,email")
+          .select("display_name,email,avatar_url")
           .eq("id", user.id)
           .maybeSingle<ProfileRow>(),
         supabase
@@ -314,9 +358,11 @@ export default function ProfileScreen() {
       setProfileData({
         displayName,
         email,
+        avatarUrl: profile?.avatar_url?.trim() || null,
         subscription,
         generatedThisMonth: soundsResult.count ?? 0,
       });
+      setDraftName(displayName);
 
       if (initial) {
         setLoading(false);
@@ -362,6 +408,73 @@ export default function ProfileScreen() {
     router.push("/upgrade");
   }, [router]);
 
+  const startEditingName = useCallback(() => {
+    setDraftName(profileData?.displayName ?? "");
+    setEditingName(true);
+    setErrorMessage(null);
+  }, [profileData?.displayName]);
+
+  const cancelEditingName = useCallback(() => {
+    setEditingName(false);
+    setDraftName(profileData?.displayName ?? "");
+    setErrorMessage(null);
+  }, [profileData?.displayName]);
+
+  const saveDisplayName = useCallback(async () => {
+    const userId = session?.user?.id;
+    if (!userId) {
+      return;
+    }
+    setSavingName(true);
+    setErrorMessage(null);
+    try {
+      await updateProfileDisplayName(userId, draftName);
+      setProfileData((prev) =>
+        prev ? { ...prev, displayName: draftName.trim().replace(/\s+/g, " ") } : prev
+      );
+      setEditingName(false);
+    } catch (e) {
+      setErrorMessage(e instanceof Error ? e.message : "Could not update name.");
+    } finally {
+      setSavingName(false);
+    }
+  }, [draftName, session?.user?.id]);
+
+  const pickAvatar = useCallback(async () => {
+    const userId = session?.user?.id;
+    if (!userId) {
+      return;
+    }
+
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Photos access", "Allow photo access to set a profile picture.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+
+    if (result.canceled || !result.assets[0]?.uri) {
+      return;
+    }
+
+    setUploadingAvatar(true);
+    setErrorMessage(null);
+    try {
+      const avatarUrl = await uploadProfileAvatar(userId, result.assets[0].uri);
+      setProfileData((prev) => (prev ? { ...prev, avatarUrl } : prev));
+    } catch (e) {
+      setErrorMessage(e instanceof Error ? e.message : "Could not upload photo.");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  }, [session?.user?.id]);
+
   return (
     <Screen>
       <ScrollView
@@ -390,13 +503,61 @@ export default function ProfileScreen() {
           <>
             <Card style={styles.profileCard}>
               <View style={styles.profileTop}>
-                <View style={styles.avatar}>
-                  <Ionicons name="person" size={30} color={theme.colors.primary} />
+                <View style={styles.avatarWrap}>
+                  <ProfileAvatar
+                    name={profileData?.displayName ?? "SoundPulse listener"}
+                    avatarUrl={profileData?.avatarUrl}
+                    size={62}
+                    onPress={() => void pickAvatar()}
+                  />
+                  {uploadingAvatar ? (
+                    <View style={styles.avatarLoading}>
+                      <ActivityIndicator color={theme.colors.primary} />
+                    </View>
+                  ) : null}
                 </View>
                 <View style={styles.identity}>
-                  <Text style={styles.name} numberOfLines={1}>
-                    {profileData?.displayName ?? "SoundPulse listener"}
-                  </Text>
+                  {editingName ? (
+                    <>
+                      <Input
+                        value={draftName}
+                        onChangeText={setDraftName}
+                        autoCapitalize="words"
+                        autoCorrect={false}
+                        maxLength={32}
+                        placeholder="Display name"
+                      />
+                      <View style={styles.nameEditActions}>
+                        <Button
+                          label={savingName ? "Saving…" : "Save"}
+                          onPress={() => void saveDisplayName()}
+                          disabled={savingName}
+                          style={{ flex: 1 }}
+                        />
+                        <Button
+                          label="Cancel"
+                          variant="secondary"
+                          onPress={cancelEditingName}
+                          disabled={savingName}
+                          style={{ flex: 1 }}
+                        />
+                      </View>
+                    </>
+                  ) : (
+                    <View style={styles.nameRow}>
+                      <Text style={[styles.name, { flex: 1 }]} numberOfLines={1}>
+                        {profileData?.displayName ?? "SoundPulse listener"}
+                      </Text>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Edit display name"
+                        onPress={startEditingName}
+                        style={styles.editBtn}
+                      >
+                        <Ionicons name="pencil" size={16} color={theme.colors.primary} />
+                      </Pressable>
+                    </View>
+                  )}
                   <Text style={styles.email} numberOfLines={1}>
                     {profileData?.email ?? "Not signed in"}
                   </Text>

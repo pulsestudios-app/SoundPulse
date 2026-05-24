@@ -1,5 +1,7 @@
 import { supabase } from "@/src/lib/supabase";
 
+import type { SavedLayerSnapshot } from "@/src/features/mixer/layerPresets";
+
 import type { CommunityCategoryKey } from "./categories";
 import type {
   CommunitySound,
@@ -11,7 +13,7 @@ import type {
 const PAGE_SIZE = 10;
 
 type PulseRow = { sound_id: string; created_at: string | null };
-type ProfileRow = { id: string; display_name: string | null; email: string | null };
+type ProfileRow = { id: string; display_name: string | null; email: string | null; avatar_url: string | null };
 
 function twentyFourHoursAgoIso(): string {
   return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -98,7 +100,7 @@ async function enrichCommunitySounds(
   const [{ pulseCounts, pulses24h }, { pulsed, saved }, profilesResult] = await Promise.all([
     fetchPulseStats(soundIds),
     fetchUserPulseSaveState(userId, soundIds),
-    supabase.from("profiles").select("id, display_name, email").in("id", userIds),
+    supabase.from("profiles").select("id, display_name, email, avatar_url").in("id", userIds),
   ]);
 
   const profileMap = new Map<string, ProfileRow>();
@@ -109,6 +111,7 @@ async function enrichCommunitySounds(
   return rows.map((row) => ({
     ...row,
     creatorName: fallbackCreatorName(profileMap.get(row.user_id), row.user_id),
+    creatorAvatarUrl: profileMap.get(row.user_id)?.avatar_url?.trim() || null,
     pulseCount: pulseCounts.get(row.id) ?? 0,
     pulses24h: pulses24h.get(row.id) ?? 0,
     hasPulsed: pulsed.has(row.id),
@@ -206,6 +209,61 @@ export async function fetchFeaturedCommunitySound(userId?: string): Promise<Comm
   return enriched[0] ?? null;
 }
 
+export async function shareMixToCommunity(input: {
+  userId: string;
+  name: string;
+  layers: SavedLayerSnapshot[];
+  savedMixId: string;
+  tags?: CommunityCategoryKey[];
+}): Promise<void> {
+  const { error } = await supabase.from("community_sounds").insert({
+    user_id: input.userId,
+    title: input.name,
+    prompt: `Layer mix · ${input.name}`,
+    kind: "mix",
+    mix_layers: input.layers,
+    saved_mix_id: input.savedMixId,
+    tags: input.tags ?? ["relax"],
+    is_public: true,
+    duration: 0,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function removeCommunitySoundFromDiscover(userId: string, soundId: string): Promise<void> {
+  const { error } = await supabase
+    .from("community_sounds")
+    .update({ is_public: false })
+    .eq("id", soundId)
+    .eq("user_id", userId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+async function deleteCommunitySoundRelations(soundId: string): Promise<void> {
+  await supabase.from("sound_likes").delete().eq("sound_id", soundId);
+  await supabase.from("sound_saves").delete().eq("sound_id", soundId);
+  await supabase.from("sound_reports").delete().eq("sound_id", soundId);
+}
+
+export async function deleteCommunitySoundCompletely(userId: string, soundId: string): Promise<void> {
+  await deleteCommunitySoundRelations(soundId);
+  const { error } = await supabase
+    .from("community_sounds")
+    .delete()
+    .eq("id", soundId)
+    .eq("user_id", userId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
 export async function shareSoundToCommunity(input: ShareCommunitySoundInput): Promise<void> {
   const { error } = await supabase.from("community_sounds").insert({
     user_id: input.userId,
@@ -215,6 +273,7 @@ export async function shareSoundToCommunity(input: ShareCommunitySoundInput): Pr
     duration: Math.max(0, Math.round(input.duration)),
     tags: input.tags,
     is_public: true,
+    kind: "audio",
   });
 
   if (error) {
@@ -291,7 +350,7 @@ export async function fetchCreatorProfile(
   const [profileResult, soundsResult] = await Promise.all([
     supabase
       .from("profiles")
-      .select("id, display_name, email")
+      .select("id, display_name, email, avatar_url")
       .eq("id", creatorId)
       .maybeSingle(),
     supabase
@@ -332,6 +391,7 @@ export async function fetchCreatorProfile(
     userId: creatorId,
     displayName: fallbackCreatorName(profile ?? undefined, creatorId),
     email: profile?.email?.trim() || null,
+    avatarUrl: profile?.avatar_url?.trim() || null,
     soundsShared: soundRows.length,
     totalPulses,
     sounds,

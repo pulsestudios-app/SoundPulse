@@ -1,11 +1,15 @@
 import { Ionicons } from "@expo/vector-icons";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
+import { ProfileAvatar } from "@/src/components/profile/ProfileAvatar";
 import { formatPulseCount } from "@/src/features/community/formatPulses";
-import type { CommunitySound } from "@/src/features/community/types";
+import { isCommunityMix, type CommunitySound } from "@/src/features/community/types";
 import { useAppTheme } from "@/src/theme";
 
-function formatDuration(seconds: number | null): string {
+function formatDuration(seconds: number | null, isMix: boolean): string {
+  if (isMix) {
+    return "Mix";
+  }
   if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0) {
     return "0:00";
   }
@@ -20,11 +24,13 @@ type CommunitySoundCardProps = {
   isPlaying: boolean;
   isLoading: boolean;
   isPremium: boolean;
+  isOwner?: boolean;
   onPlay: () => void;
   onPulse: () => void;
   onSave: () => void;
   onUpgrade?: () => void;
   onViewProfile?: () => void;
+  onManageOwn?: () => void;
 };
 
 export function CommunitySoundCard({
@@ -32,14 +38,18 @@ export function CommunitySoundCard({
   isPlaying,
   isLoading,
   isPremium,
+  isOwner = false,
   onPlay,
   onPulse,
   onSave,
   onUpgrade,
   onViewProfile,
+  onManageOwn,
 }: CommunitySoundCardProps) {
   const theme = useAppTheme();
-  const title = sound.title?.trim() || sound.prompt?.trim() || "Community soundscape";
+  const isMix = isCommunityMix(sound);
+  const title = sound.title?.trim() || sound.prompt?.trim() || (isMix ? "Layer mix" : "Community soundscape");
+  const durationLabel = formatDuration(sound.duration, isMix);
 
   return (
     <View
@@ -55,7 +65,7 @@ export function CommunitySoundCard({
       <View style={{ flexDirection: "row", alignItems: "flex-start", gap: theme.spacing.md }}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={isPlaying ? `Pause ${title}` : `Play ${title}`}
+          accessibilityLabel={isMix ? `Open mix ${title}` : isPlaying ? `Pause ${title}` : `Play ${title}`}
           onPress={onPlay}
           disabled={isLoading}
           style={{
@@ -65,31 +75,61 @@ export function CommunitySoundCard({
             alignItems: "center",
             justifyContent: "center",
             borderWidth: 1,
-            borderColor: isPlaying ? theme.colors.sky : `${theme.colors.primary}66`,
-            backgroundColor: isPlaying ? `${theme.colors.sky}1f` : `${theme.colors.primary}18`,
+            borderColor: isMix
+              ? theme.colors.sky
+              : isPlaying
+                ? theme.colors.sky
+                : `${theme.colors.primary}66`,
+            backgroundColor: isMix
+              ? `${theme.colors.sky}1f`
+              : isPlaying
+                ? `${theme.colors.sky}1f`
+                : `${theme.colors.primary}18`,
           }}
         >
           {isLoading ? (
             <ActivityIndicator color={theme.colors.sky} />
           ) : (
             <Ionicons
-              name={isPlaying ? "pause" : "play"}
+              name={isMix ? "layers" : isPlaying ? "pause" : "play"}
               size={26}
-              color={isPlaying ? theme.colors.sky : theme.colors.primary}
+              color={isMix ? theme.colors.sky : isPlaying ? theme.colors.sky : theme.colors.primary}
             />
           )}
         </Pressable>
 
         <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-          <Text
-            style={{ ...theme.typography.title, color: theme.colors.textPrimary, fontSize: 17 }}
-            numberOfLines={2}
-          >
-            {title}
-          </Text>
-          <Text style={{ ...theme.typography.caption, color: theme.colors.textSecondary }}>
-            {sound.creatorName} · {formatDuration(sound.duration)}
-          </Text>
+          <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+            <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+              <Text
+                style={{ ...theme.typography.title, color: theme.colors.textPrimary, fontSize: 17 }}
+                numberOfLines={2}
+              >
+                {title}
+              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <ProfileAvatar
+                  name={sound.creatorName}
+                  avatarUrl={sound.creatorAvatarUrl}
+                  size={22}
+                />
+                <Text style={{ ...theme.typography.caption, color: theme.colors.textSecondary, flex: 1 }}>
+                  {sound.creatorName} · {durationLabel}
+                </Text>
+              </View>
+            </View>
+            {isOwner && onManageOwn ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Manage community sound"
+                onPress={onManageOwn}
+                hitSlop={8}
+                style={styles.trashBtn}
+              >
+                <Ionicons name="trash-outline" size={18} color={theme.colors.coral} />
+              </Pressable>
+            ) : null}
+          </View>
           {onViewProfile ? (
             <Pressable
               accessibilityRole="button"
@@ -201,5 +241,12 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 999,
     borderWidth: 1,
+  },
+  trashBtn: {
+    padding: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#ff6f6144",
+    backgroundColor: "#ff6f6114",
   },
 });

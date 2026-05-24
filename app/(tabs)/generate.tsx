@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -25,36 +25,25 @@ import { layerMixerEngine } from "@/src/features/audio/layerMixerEngine";
 import { onPlaybackStopped } from "@/src/features/audio/playbackRegistry";
 import { useAuthSession } from "@/src/features/auth/useAuthSession";
 import { inferTagsFromPrompt } from "@/src/features/community/categories";
-import { shareSoundToCommunity } from "@/src/features/community/communityApi";
+import { shareMixToCommunity, shareSoundToCommunity } from "@/src/features/community/communityApi";
 import { generateSoundscape, GenerateSoundscapeError } from "@/src/features/soundscapes/generateApi";
-import { saveLibrarySound } from "@/src/features/soundscapes/userLibrary";
+import {
+  defaultLayerStates,
+  layerStatesForEngine,
+  layerStatesFromSnapshots,
+  LAYER_PRESETS,
+  snapshotsFromLayerStates,
+  type LayerRowState,
+  type SavedLayerSnapshot,
+} from "@/src/features/mixer/layerPresets";
+import { consumePendingMixLoad } from "@/src/features/mixer/pendingMixLoad";
+import { fetchUserSavedMixes, saveUserMix, type SavedMixRow } from "@/src/features/mixer/savedMixesApi";
 import { useIsPremium } from "@/src/features/subscription/useIsPremium";
 import { useScrollContentBottomPad } from "@/src/hooks/useScrollBottomInset";
 import { supabase } from "@/src/lib/supabase";
 import { useAppTheme } from "@/src/theme";
 
 type GenerateMode = "ai" | "mixer";
-
-type LayerDef = {
-  key: string;
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-};
-
-const LAYER_PRESETS: LayerDef[] = [
-  { key: "rain", label: "Rain", icon: "rainy-outline" },
-  { key: "ocean", label: "Ocean", icon: "water-outline" },
-  { key: "wind", label: "Wind", icon: "cloud-outline" },
-  { key: "fire", label: "Fireplace", icon: "flame-outline" },
-  { key: "white", label: "White Noise", icon: "pulse-outline" },
-  { key: "forest", label: "Forest", icon: "leaf-outline" },
-  { key: "train", label: "Train", icon: "train-outline" },
-  { key: "siren", label: "Siren", icon: "alert-outline" },
-  { key: "thunder", label: "Thunder", icon: "flash-outline" },
-  { key: "cricket", label: "Crickets", icon: "bug-outline" },
-  { key: "howl", label: "Howl", icon: "moon-outline" },
-  { key: "shishi", label: "Shishi-Odoshi", icon: "water-outline" },
-];
 
 const EXAMPLE_PROMPTS = [
   "Rainy cabin with distant thunder",
@@ -83,6 +72,7 @@ type AiGenerationResult = {
 
 export default function GenerateScreen() {
   const router = useRouter();
+  const { mode: modeParam } = useLocalSearchParams<{ mode?: string }>();
   const theme = useAppTheme();
   const scrollBottomPad = useScrollContentBottomPad(24);
   const { session } = useAuthSession();
@@ -103,15 +93,15 @@ export default function GenerateScreen() {
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
 
-  const [layers, setLayers] = useState(() =>
-    LAYER_PRESETS.map(() => ({
-      volume: 45,
-      enabled: false,
-    }))
-  );
+  const [layers, setLayers] = useState<LayerRowState[]>(() => defaultLayerStates());
   const [mixPlaying, setMixPlaying] = useState(false);
   const [mixLoading, setMixLoading] = useState(false);
-  const [mixSaved, setMixSaved] = useState(false);
+  const [savedMixes, setSavedMixes] = useState<SavedMixRow[]>([]);
+  const [saveMixModalVisible, setSaveMixModalVisible] = useState(false);
+  const [mixName, setMixName] = useState("");
+  const [shareMixToCommunityToggle, setShareMixToCommunityToggle] = useState(false);
+  const [savingMix, setSavingMix] = useState(false);
+  const [mixesLoading, setMixesLoading] = useState(false);
 
   const layersRef = useRef(layers);
   layersRef.current = layers;
@@ -124,15 +114,51 @@ export default function GenerateScreen() {
     });
   }, []);
 
-  const layerStatesForEngine = useCallback(
-    () =>
-      LAYER_PRESETS.map((preset, i) => ({
-        key: preset.key,
-        volume: layersRef.current[i]?.volume ?? 0,
-        enabled: layersRef.current[i]?.enabled ?? false,
-      })),
+  const layerStatesForEngineCallback = useCallback(
+    () => layerStatesForEngine(layersRef.current),
     []
   );
+
+  const applyLayerSnapshots = useCallback((snapshots: SavedLayerSnapshot[]) => {
+    setLayers(layerStatesFromSnapshots(snapshots));
+    void layerMixerEngine.stopMix();
+    setMixPlaying(false);
+  }, []);
+
+  const loadSavedMixes = useCallback(async () => {
+    const userId = session?.user?.id;
+    if (!userId) {
+      setSavedMixes([]);
+      return;
+    }
+    setMixesLoading(true);
+    try {
+      const mixes = await fetchUserSavedMixes(userId);
+      setSavedMixes(mixes);
+    } catch (e) {
+      console.error("[Generate] Could not load saved mixes:", e);
+    } finally {
+      setMixesLoading(false);
+    }
+  }, [session?.user?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const pending = consumePendingMixLoad();
+      if (pending) {
+        setMode("mixer");
+        applyLayerSnapshots(pending);
+      } else if (modeParam === "mixer") {
+        setMode("mixer");
+      }
+    }, [applyLayerSnapshots, modeParam])
+  );
+
+  useEffect(() => {
+    if (mode === "mixer") {
+      void loadSavedMixes();
+    }
+  }, [loadSavedMixes, mode]);
 
   const hasEnabledLayer = layers.some((l) => l.enabled);
 
@@ -298,7 +324,7 @@ export default function GenerateScreen() {
     }
     setMixLoading(true);
     try {
-      await layerMixerEngine.playMix(layerStatesForEngine());
+      await layerMixerEngine.playMix(layerStatesForEngineCallback());
       setMixPlaying(layerMixerEngine.isPlaying());
     } catch (e) {
       console.error("[Generate] Mixer play failed:", e);
@@ -306,7 +332,7 @@ export default function GenerateScreen() {
     } finally {
       setMixLoading(false);
     }
-  }, [hasEnabledLayer, layerStatesForEngine, mixPlaying]);
+  }, [hasEnabledLayer, layerStatesForEngineCallback, mixPlaying]);
 
   const onLayerEnabledChange = useCallback((idx: number, enabled: boolean) => {
     setLayers((prev) => {
@@ -337,22 +363,77 @@ export default function GenerateScreen() {
     void layerMixerEngine.setLayerVolume(preset.key, rounded);
   }, []);
 
-  const saveMixer = useCallback(async () => {
-    const snapshot = JSON.stringify(
-      LAYER_PRESETS.map((d, i) => ({
-        id: d.key,
-        volume: layers[i]?.volume ?? 0,
-        enabled: layers[i]?.enabled ?? false,
-      }))
-    );
-    await saveLibrarySound({
-      kind: "mix",
-      title: "Layer mix",
-      subtitle: "Mixer",
-      payload: snapshot,
-    }).catch(console.error);
-    setMixSaved(true);
-  }, [layers]);
+  const openSaveMixModal = useCallback(() => {
+    if (!hasEnabledLayer) {
+      return;
+    }
+    setMixName("");
+    setShareMixToCommunityToggle(false);
+    setSaveMixModalVisible(true);
+  }, [hasEnabledLayer]);
+
+  const confirmSaveMix = useCallback(async () => {
+    const userId = session?.user?.id;
+    const trimmedName = mixName.trim();
+    if (!userId || !trimmedName) {
+      setAiError("Enter a name for your mix.");
+      return;
+    }
+
+    if (shareMixToCommunityToggle && !isPremium) {
+      setSaveMixModalVisible(false);
+      router.push("/upgrade");
+      return;
+    }
+
+    setSavingMix(true);
+    setAiError(null);
+    try {
+      const snapshots = snapshotsFromLayerStates(layers);
+      const saved = await saveUserMix({
+        userId,
+        name: trimmedName,
+        layers: snapshots,
+      });
+
+      if (shareMixToCommunityToggle) {
+        await shareMixToCommunity({
+          userId,
+          name: trimmedName,
+          layers: snapshots,
+          savedMixId: saved.id,
+          tags: inferTagsFromPrompt(trimmedName),
+        });
+        showToast("Mix saved and shared to Discover");
+      } else {
+        showToast("Mix saved");
+      }
+
+      setSaveMixModalVisible(false);
+      await loadSavedMixes();
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : "Could not save mix.");
+    } finally {
+      setSavingMix(false);
+    }
+  }, [
+    isPremium,
+    layers,
+    loadSavedMixes,
+    mixName,
+    router,
+    session?.user?.id,
+    shareMixToCommunityToggle,
+    showToast,
+  ]);
+
+  const loadSavedMix = useCallback(
+    (mix: SavedMixRow) => {
+      applyLayerSnapshots(mix.layers);
+      showToast(`Loaded ${mix.name}`);
+    },
+    [applyLayerSnapshots, showToast]
+  );
 
   return (
     <Screen>
@@ -537,13 +618,45 @@ export default function GenerateScreen() {
                 disabled={mixLoading || (!mixPlaying && !hasEnabledLayer)}
                 onPress={() => void toggleMixerPlay()}
               />
-              <Button label="Save Mix" premiumGlow disabled={mixSaved} onPress={saveMixer} />
+              <Button
+                label="Save Mix"
+                premiumGlow
+                disabled={!hasEnabledLayer}
+                onPress={openSaveMixModal}
+              />
               {mixPlaying ? (
                 <Text style={styles.mixPlayingHint}>Mix playing · layers loop in the background.</Text>
               ) : !hasEnabledLayer ? (
                 <Text style={styles.mixPlayingHint}>Enable at least one layer to play.</Text>
               ) : null}
             </View>
+
+            <Card>
+              <Text style={styles.sectionTitle}>My Mixes</Text>
+              {mixesLoading ? (
+                <ActivityIndicator color={theme.colors.primary} style={{ marginVertical: theme.spacing.md }} />
+              ) : savedMixes.length === 0 ? (
+                <Text style={styles.mixPlayingHint}>No saved mixes yet — save your current layers to reuse them.</Text>
+              ) : (
+                <View style={{ gap: theme.spacing.sm }}>
+                  {savedMixes.map((mix) => (
+                    <Pressable
+                      key={mix.id}
+                      onPress={() => loadSavedMix(mix)}
+                      style={styles.savedMixRow}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Load mix ${mix.name}`}
+                    >
+                      <Ionicons name="layers-outline" size={20} color={theme.colors.sky} />
+                      <Text style={styles.savedMixName} numberOfLines={1}>
+                        {mix.name}
+                      </Text>
+                      <Ionicons name="chevron-forward" size={18} color={theme.colors.textSecondary} />
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </Card>
           </>
         )}
       </ScrollView>
@@ -566,6 +679,55 @@ export default function GenerateScreen() {
               style={{ alignSelf: "stretch" }}
             />
             <Button variant="secondary" label="Maybe later" onPress={() => setPaywallVisible(false)} />
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={saveMixModalVisible} transparent animationType="fade">
+        <View style={styles.paywallBackdrop}>
+          <Pressable style={styles.paywallBackdropFill} onPress={() => setSaveMixModalVisible(false)} />
+          <View style={styles.paywallCard}>
+            <Text style={styles.paywallTitle}>Save mix</Text>
+            <Input
+              placeholder="Mix name"
+              value={mixName}
+              onChangeText={setMixName}
+              maxLength={48}
+              autoCapitalize="words"
+            />
+            <View style={styles.shareRow}>
+              <View style={styles.shareCopy}>
+                <Text style={styles.shareLabel}>Share to Community</Text>
+                <Text style={styles.shareHint}>
+                  {isPremium
+                    ? "Show this mix on Discover with a mixer icon."
+                    : "Premium required to share mixes."}
+                </Text>
+              </View>
+              <Switch
+                value={shareMixToCommunityToggle}
+                onValueChange={(enabled) => {
+                  if (enabled && !isPremium) {
+                    setSaveMixModalVisible(false);
+                    router.push("/upgrade");
+                    return;
+                  }
+                  setShareMixToCommunityToggle(enabled);
+                }}
+                thumbColor={shareMixToCommunityToggle ? theme.colors.primary : "#666"}
+                trackColor={{
+                  false: theme.colors.border,
+                  true: `${theme.colors.primary}88`,
+                }}
+              />
+            </View>
+            <Button
+              label={savingMix ? "Saving…" : "Save mix"}
+              onPress={() => void confirmSaveMix()}
+              disabled={savingMix || !mixName.trim()}
+              style={{ alignSelf: "stretch" }}
+            />
+            <Button variant="secondary" label="Cancel" onPress={() => setSaveMixModalVisible(false)} />
           </View>
         </View>
       </Modal>
@@ -770,6 +932,23 @@ function stylesForTheme(theme: ReturnType<typeof useAppTheme>) {
       ...theme.typography.caption,
       color: theme.colors.sky,
       textAlign: "center",
+    },
+    savedMixRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: theme.spacing.sm,
+      borderWidth: 1,
+      borderColor: `${theme.colors.sky}33`,
+      borderRadius: theme.radius.md,
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: theme.spacing.sm,
+      backgroundColor: `${theme.colors.background}80`,
+    },
+    savedMixName: {
+      ...theme.typography.body,
+      color: theme.colors.textPrimary,
+      fontWeight: "700",
+      flex: 1,
     },
     paywallBackdrop: {
       flex: 1,
