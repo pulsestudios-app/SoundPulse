@@ -24,6 +24,7 @@
     "expo-router": "~6.0.23",
     "expo-secure-store": "~15.0.8",
     "expo-status-bar": "~3.0.9",
+    "expo-updates": "~29.0.17",
     "expo-web-browser": "~15.0.10",
     "react": "19.1.0",
     "react-native": "0.81.5",
@@ -34,12 +35,14 @@
     "react-native-svg": "15.12.1",
     "react-native-worklets": "0.5.1",
     "react-native-worklets-core": "^1.6.3",
+    "soundpulse-foreground-service": "file:./modules/foreground-service",
     "zustand": "^5.0.13"
   },
   "devDependencies": {
     "@types/react": "~19.1.0",
     "babel-preset-expo": "~54.0.10",
     "dotenv": "^17.4.2",
+    "sharp": "^0.34.5",
     "typescript": "~5.9.2"
   },
   "private": true

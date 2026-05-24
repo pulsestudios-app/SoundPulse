@@ -1,6 +1,7 @@
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
 
-import { linearFadeVolume, sleep } from "./fadeVolume";
+import { sleep } from "./fadeVolume";
+import { retainBackgroundPlayback, releaseBackgroundPlayback } from "./backgroundPlayback";
 import { getLayerAudioUri } from "./layerSources";
 import { registerPlaybackHandler, unregisterPlaybackHandler } from "./playbackRegistry";
 
@@ -24,6 +25,7 @@ class LayerMixerEngine {
   private baseVolumes = new Map<string, number>();
   private audioModeConfigured = false;
   private playing = false;
+  private backgroundActive = false;
 
   private register(): void {
     registerPlaybackHandler({
@@ -129,6 +131,10 @@ class LayerMixerEngine {
     this.playing = this.sounds.size > 0;
     if (this.playing) {
       this.register();
+      if (!this.backgroundActive) {
+        retainBackgroundPlayback("Layer mix", "Layer Mixer");
+        this.backgroundActive = true;
+      }
     }
   }
 
@@ -175,6 +181,10 @@ class LayerMixerEngine {
     const keys = [...this.sounds.keys()];
     await Promise.all(keys.map((k) => this.unloadLayer(k)));
     this.playing = false;
+    if (this.backgroundActive) {
+      releaseBackgroundPlayback();
+      this.backgroundActive = false;
+    }
   }
 
   /** While mix is playing: apply enable/volume changes for a single layer. */

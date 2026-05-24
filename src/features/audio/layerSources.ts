@@ -12,7 +12,15 @@ function layerUrl(fileName: string): string {
   return `${LAYER_CDN_BASE}/${encodeURIComponent(fileName)}`;
 }
 
-export type LayerAudioKey = "rain" | "ocean" | "wind" | "fire" | "white" | "forest";
+export type LayerAudioKey =
+  | "rain"
+  | "ocean"
+  | "wind"
+  | "fire"
+  | "white"
+  | "forest"
+  | "siren"
+  | "thunder";
 
 /** One loop per mixer layer — distinct files, label-accurate ambience. */
 export const LAYER_AUDIO_URI: Record<LayerAudioKey, string> = {
@@ -22,6 +30,8 @@ export const LAYER_AUDIO_URI: Record<LayerAudioKey, string> = {
   fire: layerUrl("fire.mp3"),
   white: layerUrl("white.mp3"),
   forest: layerUrl("forest.mp3"),
+  siren: layerUrl("siren.mp3"),
+  thunder: layerUrl("thunder.mp3"),
 };
 
 export function getLayerAudioUri(key: string): string | null {

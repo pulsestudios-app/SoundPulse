@@ -1,3 +1,5 @@
+import { resetBackgroundPlayback } from "./backgroundPlayback";
+
 export type PlaybackHandler = {
   id: string;
   fadeOut: (durationMs: number) => Promise<void>;
@@ -40,5 +42,6 @@ export async function restoreAllPlaybackVolume(): Promise<void> {
 export async function stopAllPlayback(): Promise<void> {
   const active = [...handlers.values()];
   await Promise.all(active.map((handler) => handler.stop()));
+  resetBackgroundPlayback();
   notifyPlaybackStopped();
 }

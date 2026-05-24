@@ -1,0 +1,12 @@
+{
+  "name": "soundpulse-foreground-service",
+  "version": "1.0.0",
+  "description": "Native Android foreground playback service for SoundPulse",
+  "main": "index.js",
+  "license": "MIT",
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  }
+}

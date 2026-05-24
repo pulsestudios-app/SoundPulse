@@ -1,6 +1,7 @@
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
 
 import { linearFadeVolume } from "./fadeVolume";
+import { retainBackgroundPlayback, releaseBackgroundPlayback } from "./backgroundPlayback";
 import { registerPlaybackHandler, unregisterPlaybackHandler } from "./playbackRegistry";
 
 const HANDLER_ID = "library";
@@ -13,6 +14,7 @@ class LibraryPlayer {
   private activeSoundId: string | null = null;
   private baseVolume = 1;
   private audioModeConfigured = false;
+  private backgroundActive = false;
 
   getActiveSoundId(): string | null {
     return this.activeSoundId;
@@ -85,6 +87,10 @@ class LibraryPlayer {
     this.activeSoundId = null;
     this.baseVolume = 1;
     this.unregister();
+    if (this.backgroundActive) {
+      releaseBackgroundPlayback();
+      this.backgroundActive = false;
+    }
     if (!sound) {
       return;
     }
@@ -118,11 +124,19 @@ class LibraryPlayer {
       if (status.isLoaded && status.isPlaying) {
         await this.sound.pauseAsync();
         this.unregister();
+        if (this.backgroundActive) {
+          releaseBackgroundPlayback();
+          this.backgroundActive = false;
+        }
         return { playing: false, loading: false };
       }
       await this.ensureBackgroundAudioMode();
       await this.sound.playAsync();
       this.register();
+      if (!this.backgroundActive) {
+        retainBackgroundPlayback("Library", "Saved soundscape");
+        this.backgroundActive = true;
+      }
       return { playing: true, loading: false };
     }
 
@@ -143,6 +157,10 @@ class LibraryPlayer {
     this.sound = sound;
     this.activeSoundId = soundId;
     this.register();
+    if (!this.backgroundActive) {
+      retainBackgroundPlayback("Library", "Saved soundscape");
+      this.backgroundActive = true;
+    }
     return { playing: true, loading: false };
   }
 }

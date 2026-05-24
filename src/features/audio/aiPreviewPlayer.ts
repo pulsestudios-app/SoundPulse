@@ -1,6 +1,7 @@
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
 
 import { linearFadeVolume } from "./fadeVolume";
+import { retainBackgroundPlayback, releaseBackgroundPlayback } from "./backgroundPlayback";
 import { registerPlaybackHandler, unregisterPlaybackHandler } from "./playbackRegistry";
 
 const HANDLER_ID = "ai-preview";
@@ -22,6 +23,21 @@ class AiPreviewPlayer {
   private url: string | null = null;
   private audioModeConfigured = false;
   private baseVolume = 1;
+  private backgroundActive = false;
+
+  private retainBackground(): void {
+    if (!this.backgroundActive) {
+      retainBackgroundPlayback("AI soundscape", "Generated preview");
+      this.backgroundActive = true;
+    }
+  }
+
+  private releaseBackground(): void {
+    if (this.backgroundActive) {
+      releaseBackgroundPlayback();
+      this.backgroundActive = false;
+    }
+  }
 
   private register(): void {
     registerPlaybackHandler({
@@ -73,11 +89,13 @@ class AiPreviewPlayer {
     await this.ensureBackgroundAudioMode();
     await this.sound?.playAsync();
     this.register();
+    this.retainBackground();
   }
 
   async pause(): Promise<void> {
     await this.sound?.pauseAsync();
     this.unregister();
+    this.releaseBackground();
   }
 
   async toggle(url: string): Promise<boolean> {
@@ -136,6 +154,7 @@ class AiPreviewPlayer {
 
   async unload(): Promise<void> {
     this.unregister();
+    this.releaseBackground();
     if (!this.sound) {
       this.url = null;
       return;

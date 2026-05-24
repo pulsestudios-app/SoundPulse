@@ -45,6 +45,8 @@ const LAYER_PRESETS: LayerDef[] = [
   { key: "fire", label: "Fireplace", icon: "flame-outline" },
   { key: "white", label: "White Noise", icon: "pulse-outline" },
   { key: "forest", label: "Forest", icon: "leaf-outline" },
+  { key: "siren", label: "Siren", icon: "alert-circle-outline" },
+  { key: "thunder", label: "Thunder", icon: "flash-outline" },
 ];
 
 const EXAMPLE_PROMPTS = [

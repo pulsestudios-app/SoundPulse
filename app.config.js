@@ -8,7 +8,7 @@ const appJson = require("./app.json");
 
 const basePlugins = appJson.expo.plugins || [];
 const plugins = Array.from(
-  new Set([...basePlugins, "./plugins/withReactNativeSvg"])
+  new Set([...basePlugins, "./plugins/withReactNativeSvg", "./plugins/withForegroundService"])
 );
 
 /** @type {import('expo/config').ExpoConfig} */
@@ -28,6 +28,11 @@ module.exports = {
     android: {
       ...appJson.expo.android,
       package: "com.soundpulseapp.android",
+      permissions: [
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "WAKE_LOCK",
+      ],
     },
     plugins,
     extra: {
