@@ -61,6 +61,26 @@ function patchSound(
   return sounds.map((s) => (s.id === id ? { ...s, ...patch } : s));
 }
 
+const BREATHING_EXERCISES = [
+  { id: "box", title: "Box Breathing", subtitle: "4-4-4-4", icon: "fitness-outline" as const },
+  { id: "478", title: "4-7-8 Breathing", subtitle: "Calm pattern", icon: "leaf-outline" as const },
+  { id: "deep", title: "Deep Relaxation", subtitle: "Slow & steady", icon: "flower-outline" as const },
+  { id: "sleep", title: "Sleep Breathing", subtitle: "Wind down", icon: "moon-outline" as const },
+  { id: "focus", title: "Focus Breathing", subtitle: "Clear mind", icon: "pulse-outline" as const },
+] as const;
+
+const BEDTIME_STORIES = [
+  { id: "cinderella", title: "Cinderella" },
+  { id: "pigs", title: "The Three Little Pigs" },
+  { id: "goldilocks", title: "Goldilocks" },
+  { id: "red-riding-hood", title: "Little Red Riding Hood" },
+  { id: "ugly-duckling", title: "The Ugly Duckling" },
+] as const;
+
+function showComingSoonAlert(title: string) {
+  Alert.alert("Coming soon", `${title} will be available in a future update.`);
+}
+
 export default function HomeScreen() {
   const theme = useAppTheme();
   const router = useRouter();
@@ -407,6 +427,88 @@ export default function HomeScreen() {
           alignItems: "center",
           paddingVertical: theme.spacing.sm,
         },
+        placeholderScroll: {
+          gap: theme.spacing.md,
+          paddingVertical: theme.spacing.xs,
+          paddingRight: theme.spacing.md,
+        },
+        placeholderCardOuter: {
+          width: 168,
+          borderRadius: theme.radius.lg,
+          overflow: "hidden",
+        },
+        placeholderCardGradient: {
+          padding: 1.5,
+          borderRadius: theme.radius.lg,
+        },
+        placeholderCard: {
+          borderRadius: theme.radius.lg - 1,
+          backgroundColor: theme.colors.surface,
+          padding: theme.spacing.md,
+          minHeight: 176,
+          justifyContent: "space-between",
+          gap: theme.spacing.sm,
+        },
+        placeholderCardTop: {
+          flexDirection: "row",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 8,
+        },
+        placeholderIconWrap: {
+          width: 40,
+          height: 40,
+          borderRadius: 20,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: `${theme.colors.primary}22`,
+          borderWidth: 1,
+          borderColor: `${theme.colors.primary}55`,
+        },
+        placeholderBadge: {
+          borderRadius: theme.radius.full,
+          paddingHorizontal: 8,
+          paddingVertical: 4,
+          backgroundColor: `${theme.colors.sky}22`,
+          borderWidth: 1,
+          borderColor: `${theme.colors.sky}66`,
+        },
+        placeholderBadgeText: {
+          ...theme.typography.caption,
+          color: theme.colors.sky,
+          fontWeight: "800",
+          fontSize: 10,
+          letterSpacing: 0.5,
+          textTransform: "uppercase",
+        },
+        placeholderTitle: {
+          ...theme.typography.body,
+          color: theme.colors.textPrimary,
+          fontWeight: "800",
+          fontSize: 15,
+          lineHeight: 20,
+        },
+        placeholderSubtitle: {
+          ...theme.typography.caption,
+          color: theme.colors.textSecondary,
+          lineHeight: 18,
+        },
+        placeholderDuration: {
+          ...theme.typography.caption,
+          color: theme.colors.sky,
+          fontWeight: "700",
+        },
+        placeholderPlayBtn: {
+          alignSelf: "flex-start",
+          width: 40,
+          height: 40,
+          borderRadius: 20,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: `${theme.colors.primary}20`,
+          borderWidth: 1,
+          borderColor: theme.colors.primary,
+        },
       }),
     [scrollBottomPad, theme]
   );
@@ -573,6 +675,99 @@ export default function HomeScreen() {
         ) : !loadingInitial ? (
           <Text style={styles.empty}>No featured sound yet — be the first to share from Generate.</Text>
         ) : null}
+
+        <View>
+          <Text style={styles.sectionLabel}>Breathing Exercises</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.placeholderScroll}>
+            {BREATHING_EXERCISES.map((item) => (
+              <Pressable
+                key={item.id}
+                accessibilityRole="button"
+                accessibilityLabel={`${item.title}, 2 minutes`}
+                onPress={() => showComingSoonAlert(item.title)}
+                style={styles.placeholderCardOuter}
+              >
+                <LinearGradient
+                  colors={[`${theme.colors.primary}88`, `${theme.colors.sky}55`, `${theme.colors.primary}33`]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.placeholderCardGradient}
+                >
+                  <View style={styles.placeholderCard}>
+                    <View style={styles.placeholderCardTop}>
+                      <View style={styles.placeholderIconWrap}>
+                        <Ionicons name={item.icon} size={20} color={theme.colors.primary} />
+                      </View>
+                    </View>
+                    <View style={{ gap: 4 }}>
+                      <Text style={styles.placeholderTitle} numberOfLines={2}>
+                        {item.title}
+                      </Text>
+                      <Text style={styles.placeholderSubtitle} numberOfLines={1}>
+                        {item.subtitle}
+                      </Text>
+                      <Text style={styles.placeholderDuration}>2 min</Text>
+                    </View>
+                    <View style={styles.placeholderPlayBtn} pointerEvents="none">
+                      <Ionicons name="play" size={18} color={theme.colors.primary} />
+                    </View>
+                  </View>
+                </LinearGradient>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+
+        <View>
+          <Text style={styles.sectionLabel}>Bedtime Stories</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.placeholderScroll}>
+            {BEDTIME_STORIES.map((item) => (
+              <Pressable
+                key={item.id}
+                accessibilityRole="button"
+                accessibilityLabel={`${item.title}, 5 minutes`}
+                onPress={() => showComingSoonAlert(item.title)}
+                style={styles.placeholderCardOuter}
+              >
+                <LinearGradient
+                  colors={[`${theme.colors.sky}77`, `${theme.colors.primary}44`, `${theme.colors.sky}22`]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.placeholderCardGradient}
+                >
+                  <View style={styles.placeholderCard}>
+                    <View style={styles.placeholderCardTop}>
+                      <View style={styles.placeholderIconWrap}>
+                        <Ionicons name="moon" size={20} color={theme.colors.sky} />
+                      </View>
+                      <View style={styles.placeholderBadge}>
+                        <Text style={styles.placeholderBadgeText}>Coming Soon</Text>
+                      </View>
+                    </View>
+                    <View style={{ gap: 4 }}>
+                      <Text style={styles.placeholderTitle} numberOfLines={2}>
+                        {item.title}
+                      </Text>
+                      <Text style={styles.placeholderDuration}>5 min</Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.placeholderPlayBtn,
+                        {
+                          backgroundColor: `${theme.colors.sky}18`,
+                          borderColor: theme.colors.sky,
+                        },
+                      ]}
+                      pointerEvents="none"
+                    >
+                      <Ionicons name="play" size={18} color={theme.colors.sky} />
+                    </View>
+                  </View>
+                </LinearGradient>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
 
         <View>
           <Text style={styles.sectionLabel}>Categories</Text>
