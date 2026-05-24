@@ -45,8 +45,12 @@ const LAYER_PRESETS: LayerDef[] = [
   { key: "fire", label: "Fireplace", icon: "flame-outline" },
   { key: "white", label: "White Noise", icon: "pulse-outline" },
   { key: "forest", label: "Forest", icon: "leaf-outline" },
-  { key: "siren", label: "Siren", icon: "alert-circle-outline" },
+  { key: "train", label: "Train", icon: "train-outline" },
+  { key: "siren", label: "Siren", icon: "alert-outline" },
   { key: "thunder", label: "Thunder", icon: "flash-outline" },
+  { key: "cricket", label: "Crickets", icon: "bug-outline" },
+  { key: "howl", label: "Howl", icon: "moon-outline" },
+  { key: "shishi", label: "Shishi-Odoshi", icon: "water-outline" },
 ];
 
 const EXAMPLE_PROMPTS = [
