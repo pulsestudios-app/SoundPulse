@@ -28,3 +28,12 @@ export type ShareCommunitySoundInput = {
   duration: number;
   tags: string[];
 };
+
+export type CreatorProfile = {
+  userId: string;
+  displayName: string;
+  email: string | null;
+  soundsShared: number;
+  totalPulses: number;
+  sounds: CommunitySound[];
+};

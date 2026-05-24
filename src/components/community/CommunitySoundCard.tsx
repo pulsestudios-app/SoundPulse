@@ -24,6 +24,7 @@ type CommunitySoundCardProps = {
   onPulse: () => void;
   onSave: () => void;
   onUpgrade?: () => void;
+  onViewProfile?: () => void;
 };
 
 export function CommunitySoundCard({
@@ -35,6 +36,7 @@ export function CommunitySoundCard({
   onPulse,
   onSave,
   onUpgrade,
+  onViewProfile,
 }: CommunitySoundCardProps) {
   const theme = useAppTheme();
   const title = sound.title?.trim() || sound.prompt?.trim() || "Community soundscape";
@@ -88,6 +90,24 @@ export function CommunitySoundCard({
           <Text style={{ ...theme.typography.caption, color: theme.colors.textSecondary }}>
             {sound.creatorName} · {formatDuration(sound.duration)}
           </Text>
+          {onViewProfile ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`View ${sound.creatorName} profile`}
+              onPress={onViewProfile}
+              hitSlop={6}
+            >
+              <Text
+                style={{
+                  ...theme.typography.caption,
+                  color: theme.colors.primary,
+                  fontWeight: "700",
+                }}
+              >
+                View Profile
+              </Text>
+            </Pressable>
+          ) : null}
           <Text style={{ ...theme.typography.caption, color: theme.colors.sky, fontWeight: "700" }}>
             {formatPulseCount(sound.pulseCount)}
             {sound.pulses24h > 0 ? ` · ${sound.pulses24h} today` : ""}

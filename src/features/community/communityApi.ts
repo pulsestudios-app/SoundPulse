@@ -1,7 +1,12 @@
 import { supabase } from "@/src/lib/supabase";
 
 import type { CommunityCategoryKey } from "./categories";
-import type { CommunitySound, CommunitySoundRow, ShareCommunitySoundInput } from "./types";
+import type {
+  CommunitySound,
+  CommunitySoundRow,
+  CreatorProfile,
+  ShareCommunitySoundInput,
+} from "./types";
 
 const PAGE_SIZE = 10;
 
@@ -277,6 +282,60 @@ export async function reportCommunitySound(
   if (error) {
     throw new Error(error.message);
   }
+}
+
+export async function fetchCreatorProfile(
+  creatorId: string,
+  viewerId?: string
+): Promise<CreatorProfile> {
+  const [profileResult, soundsResult] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("id, display_name, email")
+      .eq("id", creatorId)
+      .maybeSingle(),
+    supabase
+      .from("community_sounds")
+      .select("*")
+      .eq("user_id", creatorId)
+      .eq("is_public", true)
+      .eq("is_hidden", false)
+      .order("created_at", { ascending: false }),
+  ]);
+
+  if (profileResult.error) {
+    throw new Error(profileResult.error.message);
+  }
+  if (soundsResult.error) {
+    throw new Error(soundsResult.error.message);
+  }
+
+  const profile = profileResult.data as ProfileRow | null;
+  const soundRows = (soundsResult.data ?? []) as CommunitySoundRow[];
+  const soundIds = soundRows.map((row) => row.id);
+
+  let totalPulses = 0;
+  if (soundIds.length > 0) {
+    const { count, error } = await supabase
+      .from("sound_likes")
+      .select("id", { count: "exact", head: true })
+      .in("sound_id", soundIds);
+    if (error) {
+      throw new Error(error.message);
+    }
+    totalPulses = count ?? 0;
+  }
+
+  const sounds = await enrichCommunitySounds(soundRows, viewerId);
+
+  return {
+    userId: creatorId,
+    displayName: fallbackCreatorName(profile ?? undefined, creatorId),
+    email: profile?.email?.trim() || null,
+    soundsShared: soundRows.length,
+    totalPulses,
+    sounds,
+  };
 }
 
 export { PAGE_SIZE as COMMUNITY_PAGE_SIZE };

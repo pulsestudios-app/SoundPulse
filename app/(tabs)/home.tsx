@@ -5,7 +5,6 @@ import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -74,7 +73,17 @@ export default function HomeScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [paywallVisible, setPaywallVisible] = useState(false);
+
+  const openUpgrade = useCallback(() => {
+    router.push("/upgrade");
+  }, [router]);
+
+  const openCreatorProfile = useCallback(
+    (creatorUserId: string) => {
+      router.push(`/creator/${creatorUserId}`);
+    },
+    [router]
+  );
 
   const [playingSoundId, setPlayingSoundId] = useState<string | null>(null);
   const [loadingSoundId, setLoadingSoundId] = useState<string | null>(null);
@@ -182,7 +191,7 @@ export default function HomeScreen() {
   const onPulse = useCallback(
     async (sound: CommunitySound) => {
       if (!userId) {
-        setPaywallVisible(true);
+        openUpgrade();
         return;
       }
       try {
@@ -205,7 +214,7 @@ export default function HomeScreen() {
   const onSave = useCallback(
     async (sound: CommunitySound) => {
       if (!userId) {
-        setPaywallVisible(true);
+        openUpgrade();
         return;
       }
       try {
@@ -337,40 +346,6 @@ export default function HomeScreen() {
           alignItems: "center",
           paddingVertical: theme.spacing.sm,
         },
-        paywallBackdrop: {
-          flex: 1,
-          justifyContent: "center",
-          alignItems: "center",
-          padding: theme.spacing.lg,
-        },
-        paywallBackdropFill: {
-          ...StyleSheet.absoluteFillObject,
-          backgroundColor: "rgba(10,10,15,0.88)",
-        },
-        paywallCard: {
-          width: "100%",
-          borderRadius: theme.radius.lg,
-          padding: theme.spacing.xl,
-          gap: theme.spacing.md,
-          backgroundColor: theme.colors.surface,
-          borderWidth: 1,
-          borderColor: theme.colors.sky,
-          maxWidth: 400,
-          alignSelf: "center",
-          zIndex: 1,
-        },
-        paywallTitle: {
-          ...theme.typography.title,
-          fontSize: 22,
-          color: theme.colors.textPrimary,
-          textAlign: "center",
-        },
-        paywallBody: {
-          ...theme.typography.body,
-          color: theme.colors.textSecondary,
-          textAlign: "center",
-          lineHeight: 22,
-        },
       }),
     [scrollBottomPad, theme]
   );
@@ -430,6 +405,22 @@ export default function HomeScreen() {
                 <Text style={styles.featuredMeta}>
                   {featured.creatorName} · {formatDuration(featured.duration)}
                 </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`View ${featured.creatorName} profile`}
+                  onPress={() => openCreatorProfile(featured.user_id)}
+                  hitSlop={6}
+                >
+                  <Text
+                    style={{
+                      ...theme.typography.caption,
+                      color: theme.colors.primary,
+                      fontWeight: "700",
+                    }}
+                  >
+                    View Profile
+                  </Text>
+                </Pressable>
                 <Text style={styles.featuredPulse}>{formatPulseCount(featured.pulseCount)}</Text>
                 <Pressable
                   onPress={() => void onPlay(featured)}
@@ -453,7 +444,7 @@ export default function HomeScreen() {
                     accessibilityLabel={featured.hasPulsed ? "Remove pulse" : "Pulse"}
                     onPress={() => {
                       if (!isPremium) {
-                        setPaywallVisible(true);
+                        openUpgrade();
                         return;
                       }
                       void onPulse(featured);
@@ -486,7 +477,7 @@ export default function HomeScreen() {
                     accessibilityLabel={featured.hasSaved ? "Unsave" : "Save"}
                     onPress={() => {
                       if (!isPremium) {
-                        setPaywallVisible(true);
+                        openUpgrade();
                         return;
                       }
                       void onSave(featured);
@@ -568,7 +559,8 @@ export default function HomeScreen() {
                 onPlay={() => void onPlay(sound)}
                 onPulse={() => void onPulse(sound)}
                 onSave={() => void onSave(sound)}
-                onUpgrade={() => setPaywallVisible(true)}
+                onUpgrade={openUpgrade}
+                onViewProfile={() => openCreatorProfile(sound.user_id)}
               />
             ))}
           </View>
@@ -587,27 +579,6 @@ export default function HomeScreen() {
           ) : null}
         </View>
       </ScrollView>
-
-      <Modal visible={paywallVisible} transparent animationType="fade">
-        <View style={styles.paywallBackdrop}>
-          <Pressable style={styles.paywallBackdropFill} onPress={() => setPaywallVisible(false)} />
-          <View style={styles.paywallCard}>
-            <Text style={styles.paywallTitle}>Premium feature</Text>
-            <Text style={styles.paywallBody}>
-              Pulse and save community sounds with a Premium plan. Browsing and playback are free for everyone.
-            </Text>
-            <Button
-              label="View plans · Profile"
-              onPress={() => {
-                setPaywallVisible(false);
-                router.push("/profile");
-              }}
-              style={{ alignSelf: "stretch" }}
-            />
-            <Button variant="secondary" label="Maybe later" onPress={() => setPaywallVisible(false)} />
-          </View>
-        </View>
-      </Modal>
     </Screen>
   );
 }

@@ -254,6 +254,10 @@ export default function GenerateScreen() {
 
   const onShareToCommunityChange = useCallback(
     (enabled: boolean) => {
+      if (enabled && !isPremium) {
+        router.push("/upgrade");
+        return;
+      }
       setShareToCommunity(enabled);
       const userId = session?.user?.id;
       if (!enabled || !aiResult || !userId || sharedToCommunity || sharingCommunity) {
@@ -261,7 +265,7 @@ export default function GenerateScreen() {
       }
       void publishToCommunity(aiResult, userId);
     },
-    [aiResult, publishToCommunity, session?.user?.id, sharedToCommunity, sharingCommunity]
+    [aiResult, isPremium, publishToCommunity, router, session?.user?.id, sharedToCommunity, sharingCommunity]
   );
 
   const toggleAiPlay = useCallback(async () => {
@@ -451,28 +455,28 @@ export default function GenerateScreen() {
                   onPress={() => void saveAiResult()}
                   disabled={aiSaved}
                 />
-                {isPremium ? (
-                  <View style={styles.shareRow}>
-                    <View style={styles.shareCopy}>
-                      <Text style={styles.shareLabel}>Share to Community</Text>
-                      <Text style={styles.shareHint}>
-                        {sharedToCommunity
-                          ? "Visible on Discover for others to play and pulse."
-                          : "Let others discover and pulse your soundscape."}
-                      </Text>
-                    </View>
-                    <Switch
-                      value={shareToCommunity || sharedToCommunity}
-                      onValueChange={onShareToCommunityChange}
-                      disabled={sharedToCommunity || sharingCommunity}
-                      thumbColor={shareToCommunity || sharedToCommunity ? theme.colors.primary : "#666"}
-                      trackColor={{
-                        false: theme.colors.border,
-                        true: `${theme.colors.primary}88`,
-                      }}
-                    />
+                <View style={styles.shareRow}>
+                  <View style={styles.shareCopy}>
+                    <Text style={styles.shareLabel}>Share to Community</Text>
+                    <Text style={styles.shareHint}>
+                      {sharedToCommunity
+                        ? "Visible on Discover for others to play and pulse."
+                        : isPremium
+                          ? "Let others discover and pulse your soundscape."
+                          : "Premium required — upgrade to share with the community."}
+                    </Text>
                   </View>
-                ) : null}
+                  <Switch
+                    value={shareToCommunity || sharedToCommunity}
+                    onValueChange={onShareToCommunityChange}
+                    disabled={sharedToCommunity || sharingCommunity}
+                    thumbColor={shareToCommunity || sharedToCommunity ? theme.colors.primary : "#666"}
+                    trackColor={{
+                      false: theme.colors.border,
+                      true: `${theme.colors.primary}88`,
+                    }}
+                  />
+                </View>
               </Card>
             ) : null}
           </>
@@ -554,10 +558,10 @@ export default function GenerateScreen() {
                 "You've used all your AI generations this month. Upgrade to generate more."}
             </Text>
             <Button
-              label="View plans · Profile"
+              label="View plans"
               onPress={() => {
                 setPaywallVisible(false);
-                router.push("/profile");
+                router.push("/upgrade");
               }}
               style={{ alignSelf: "stretch" }}
             />

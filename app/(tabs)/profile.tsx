@@ -358,6 +358,10 @@ export default function ProfileScreen() {
   const isPremium = planLabel === "Premium";
   const usageLimitLabel = isPremium ? "Unlimited" : FREE_AI_GENERATIONS_PER_MONTH.toString();
 
+  const openUpgrade = useCallback(() => {
+    router.push("/upgrade");
+  }, [router]);
+
   return (
     <Screen>
       <ScrollView
@@ -452,6 +456,9 @@ export default function ProfileScreen() {
             <Card style={styles.settingsCard}>
               <Text style={styles.sectionLabel}>Settings</Text>
               <View style={styles.buttonStack}>
+                {!isPremium ? (
+                  <Button label="Upgrade to Premium" premiumGlow onPress={openUpgrade} />
+                ) : null}
                 <Button label="Manage subscription" variant="secondary" onPress={handleManageSubscription} />
                 <Button
                   label={signingOut ? "Signing out..." : "Sign out"}
