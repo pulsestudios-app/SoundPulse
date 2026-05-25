@@ -1,4 +1,4 @@
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import type { Request } from "express";
 
 type UserRateLimitOptions = {
@@ -9,7 +9,10 @@ type UserRateLimitOptions = {
 };
 
 function userKey(req: Request): string {
-  return req.user?.id ?? req.ip ?? "anonymous";
+  if (req.user?.id) {
+    return req.user.id;
+  }
+  return req.ip ? ipKeyGenerator(req.ip) : "anonymous";
 }
 
 function createUserRateLimit(options: UserRateLimitOptions) {

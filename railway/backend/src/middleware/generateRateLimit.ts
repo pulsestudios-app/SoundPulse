@@ -1,4 +1,4 @@
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import type { Request } from "express";
 
 const WINDOW_MS = 60 * 1000;
@@ -9,6 +9,11 @@ export const generateRateLimit = rateLimit({
   max: MAX_REQUESTS_PER_WINDOW,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req: Request) => req.user?.id ?? req.ip ?? "anonymous",
+  keyGenerator: (req: Request) => {
+    if (req.user?.id) {
+      return req.user.id;
+    }
+    return req.ip ? ipKeyGenerator(req.ip) : "anonymous";
+  },
   message: { error: "RATE_LIMIT_EXCEEDED" },
 });
