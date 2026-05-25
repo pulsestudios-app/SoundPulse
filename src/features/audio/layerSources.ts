@@ -2,7 +2,7 @@
  * Layer Mixer audio — remote loops loaded at runtime from jsDelivr (see /sounds/ in repo).
  * To add or update a sound: push MP3 to /sounds/ and add an entry here. No app rebuild needed.
  */
-const BASE = "https://cdn.jsdelivr.net/gh/florianbelice4-bit/SoundPulse@main/sounds/";
+const BASE = "https://cdn.jsdelivr.net/gh/pulsestudios-app/SoundPulse@main/sounds/";
 
 function layerUrl(fileName: string): string {
   return `${BASE}${encodeURIComponent(fileName)}`;
