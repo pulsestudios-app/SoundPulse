@@ -146,7 +146,7 @@ export default function PrivacyPolicyScreen() {
       <Text style={s.h2}>13. Contact</Text>
       <Text style={s.p}>
         Questions about this Privacy Policy or our data practices:{" "}
-        <Text style={s.link}>studypulse.app@gmail.com</Text>
+        <Text style={s.link}>legal@pulsestudios.app</Text>
       </Text>
       <View style={{ height: 8 }} />
     </LegalScreenLayout>
