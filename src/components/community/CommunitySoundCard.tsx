@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import type { ComponentProps } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { ProfileAvatar } from "@/src/components/profile/ProfileAvatar";
@@ -33,6 +34,9 @@ type CommunitySoundCardProps = {
   onViewProfile?: () => void;
   onManageOwn?: () => void;
   onMore?: () => void;
+  isSaveLoading?: boolean;
+  saveActionIcon?: ComponentProps<typeof Ionicons>["name"];
+  saveActionLabel?: string;
 };
 
 export function CommunitySoundCard({
@@ -49,6 +53,9 @@ export function CommunitySoundCard({
   onViewProfile,
   onManageOwn,
   onMore,
+  isSaveLoading = false,
+  saveActionIcon,
+  saveActionLabel = "Save",
 }: CommunitySoundCardProps) {
   const theme = useAppTheme();
   const isMix = isCommunityMix(sound);
@@ -230,8 +237,12 @@ export function CommunitySoundCard({
 
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={sound.hasSaved ? "Unsave" : "Save"}
+          accessibilityLabel={sound.hasSaved ? saveActionLabel : "Save"}
+          disabled={isSaveLoading}
           onPress={() => {
+            if (isSaveLoading) {
+              return;
+            }
             if (!isPremium) {
               onUpgrade?.();
               return;
@@ -246,11 +257,15 @@ export function CommunitySoundCard({
             },
           ]}
         >
-          <Ionicons
-            name={sound.hasSaved ? "bookmark" : "bookmark-outline"}
-            size={18}
-            color={sound.hasSaved ? theme.colors.sky : theme.colors.textSecondary}
-          />
+          {isSaveLoading ? (
+            <ActivityIndicator color={theme.colors.sky} size="small" />
+          ) : (
+            <Ionicons
+              name={saveActionIcon ?? (sound.hasSaved ? "bookmark" : "bookmark-outline")}
+              size={18}
+              color={sound.hasSaved ? theme.colors.sky : theme.colors.textSecondary}
+            />
+          )}
           <Text
             style={{
               ...theme.typography.caption,
@@ -258,7 +273,7 @@ export function CommunitySoundCard({
               fontWeight: "700",
             }}
           >
-            Save
+            {saveActionLabel}
           </Text>
         </Pressable>
 

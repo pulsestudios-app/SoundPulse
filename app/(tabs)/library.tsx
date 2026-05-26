@@ -1,8 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -13,6 +15,8 @@ import {
 
 import { PlaybackTimer } from "@/src/components/audio/PlaybackTimer";
 import { CommunitySoundCard } from "@/src/components/community/CommunitySoundCard";
+import { Button } from "@/src/components/core/Button";
+import { ResultsToast } from "@/src/components/core/ResultsToast";
 import { Screen } from "@/src/components/core/Screen";
 import {
   CommunitySafetySheet,
@@ -21,11 +25,13 @@ import {
 import { libraryPlayer } from "@/src/features/audio/libraryPlayer";
 import { onPlaybackStopped } from "@/src/features/audio/playbackRegistry";
 import { useAuthSession } from "@/src/features/auth/useAuthSession";
-import {
-  fetchSavedCommunitySounds,
-  toggleCommunitySave,
-} from "@/src/features/community/communityApi";
+import { fetchSavedCommunitySounds } from "@/src/features/community/communityApi";
 import { isCommunityMix, type CommunitySound } from "@/src/features/community/types";
+import {
+  deleteGeneratedSound,
+  unsaveCommunitySound,
+  unshareCommunitySound,
+} from "@/src/features/library/libraryApi";
 import type { SavedLayerSnapshot } from "@/src/features/mixer/layerPresets";
 import { setPendingMixLoad } from "@/src/features/mixer/pendingMixLoad";
 import { useIsPremium } from "@/src/features/subscription/useIsPremium";
@@ -107,6 +113,12 @@ export default function LibraryScreen() {
   const [playingSoundId, setPlayingSoundId] = useState<string | null>(null);
   const [loadingSoundId, setLoadingSoundId] = useState<string | null>(null);
   const [safetyTarget, setSafetyTarget] = useState<CommunitySafetyTarget | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<GeneratedSoundRow | null>(null);
+  const [deletingSoundId, setDeletingSoundId] = useState<string | null>(null);
+  const [unsavingSoundId, setUnsavingSoundId] = useState<string | null>(null);
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
+  const toastOpacity = useRef(new Animated.Value(0)).current;
 
   const styles = useMemo(
     () =>
@@ -188,6 +200,16 @@ export default function LibraryScreen() {
         },
         cardPressed: {
           opacity: 0.92,
+        },
+        deleteButton: {
+          width: 42,
+          height: 42,
+          borderRadius: 21,
+          alignItems: "center",
+          justifyContent: "center",
+          borderWidth: 1,
+          borderColor: `${theme.colors.coral}66`,
+          backgroundColor: `${theme.colors.coral}14`,
         },
         cardText: {
           flex: 1,
@@ -276,6 +298,34 @@ export default function LibraryScreen() {
           textAlign: "center",
           lineHeight: 20,
         },
+        modalBackdrop: {
+          flex: 1,
+          backgroundColor: "#000000bb",
+          justifyContent: "center",
+          padding: theme.spacing.lg,
+        },
+        modalCard: {
+          borderRadius: theme.radius.lg,
+          borderWidth: 1,
+          borderColor: `${theme.colors.primary}55`,
+          backgroundColor: theme.colors.surface,
+          padding: theme.spacing.lg,
+          gap: theme.spacing.md,
+        },
+        modalTitle: {
+          ...theme.typography.title,
+          color: theme.colors.textPrimary,
+          fontSize: 20,
+        },
+        modalHint: {
+          ...theme.typography.body,
+          color: theme.colors.textSecondary,
+          lineHeight: 21,
+        },
+        modalActions: {
+          flexDirection: "row",
+          gap: theme.spacing.sm,
+        },
       }),
     [scrollBottomPad, theme]
   );
@@ -292,6 +342,33 @@ export default function LibraryScreen() {
       void libraryPlayer.unload();
     };
   }, []);
+
+  const showToast = useCallback(
+    (message: string) => {
+      setToastMessage(message);
+      setToastVisible(true);
+      toastOpacity.stopAnimation();
+      toastOpacity.setValue(0);
+      Animated.sequence([
+        Animated.timing(toastOpacity, {
+          toValue: 1,
+          duration: 180,
+          useNativeDriver: true,
+        }),
+        Animated.delay(1800),
+        Animated.timing(toastOpacity, {
+          toValue: 0,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+      ]).start(({ finished }) => {
+        if (finished) {
+          setToastVisible(false);
+        }
+      });
+    },
+    [toastOpacity]
+  );
 
   const loadSounds = useCallback(
     async ({ showInitialLoading }: { showInitialLoading: boolean }) => {
@@ -438,21 +515,31 @@ export default function LibraryScreen() {
     [router]
   );
 
-  const onUnsaveCommunitySound = useCallback(
+  const onRemoveSavedCommunitySound = useCallback(
     async (sound: CommunitySound) => {
       if (!userId) {
         return;
       }
+      const previousSaved = savedSounds;
+      setUnsavingSoundId(sound.id);
+      setErrorMessage(null);
+      setSavedSounds((prev) => prev.filter((row) => row.id !== sound.id));
+      if (playingSoundId === sound.id) {
+        setPlayingSoundId(null);
+        setActiveSoundId(null);
+        void libraryPlayer.unload();
+      }
       try {
-        const saved = await toggleCommunitySave(userId, sound);
-        if (!saved) {
-          setSavedSounds((prev) => prev.filter((row) => row.id !== sound.id));
-        }
+        await unsaveCommunitySound(sound.id);
+        showToast("Removed from saved");
       } catch (e) {
+        setSavedSounds(previousSaved);
         setErrorMessage(e instanceof Error ? e.message : "Could not unsave sound.");
+      } finally {
+        setUnsavingSoundId(null);
       }
     },
-    [userId]
+    [playingSoundId, savedSounds, showToast, userId]
   );
 
   const removeSavedCommunitySound = useCallback((soundId: string) => {
@@ -473,18 +560,63 @@ export default function LibraryScreen() {
 
   const openSafetyForSound = useCallback(
     (sound: CommunitySound) => {
-      if (userId && sound.user_id === userId) {
-        setErrorMessage("You cannot report or block your own sound.");
-        return;
-      }
-
       setSafetyTarget({
         soundId: sound.id,
         userId: sound.user_id,
         creatorName: sound.creatorName,
+        isOwner: !!userId && sound.user_id === userId,
       });
     },
     [userId]
+  );
+
+  const onConfirmDeleteGeneratedSound = useCallback(async () => {
+    if (!deleteTarget) {
+      return;
+    }
+
+    const previousSounds = sounds;
+    setDeletingSoundId(deleteTarget.id);
+    setErrorMessage(null);
+    setSounds((prev) => prev.filter((row) => row.id !== deleteTarget.id));
+    if (playingSoundId === deleteTarget.id) {
+      setPlayingSoundId(null);
+      setActiveSoundId(null);
+      void libraryPlayer.unload();
+    }
+
+    try {
+      await deleteGeneratedSound(deleteTarget.id);
+      setDeleteTarget(null);
+      showToast("Sound deleted");
+    } catch (e) {
+      setSounds(previousSounds);
+      setDeleteTarget(null);
+      setErrorMessage(e instanceof Error ? e.message : "Could not delete sound.");
+    } finally {
+      setDeletingSoundId(null);
+    }
+  }, [deleteTarget, playingSoundId, showToast, sounds]);
+
+  const onUnshareCommunitySound = useCallback(
+    async (soundId: string) => {
+      const previousSaved = savedSounds;
+      setErrorMessage(null);
+      setSavedSounds((prev) => prev.filter((row) => row.id !== soundId));
+      if (playingSoundId === soundId) {
+        setPlayingSoundId(null);
+        setActiveSoundId(null);
+        void libraryPlayer.unload();
+      }
+
+      try {
+        await unshareCommunitySound(soundId);
+      } catch (e) {
+        setSavedSounds(previousSaved);
+        throw e;
+      }
+    },
+    [playingSoundId, savedSounds]
   );
 
   const sortedMySounds = useMemo(() => {
@@ -573,8 +705,17 @@ export default function LibraryScreen() {
           const isLoadingSound = loadingSoundId === sound.id;
           const title = soundTitle(sound);
           const prompt = sound.prompt?.trim();
+          const isDeleting = deletingSoundId === sound.id;
           return (
-            <View key={sound.id} style={styles.card}>
+            <Pressable
+              key={sound.id}
+              accessibilityRole="button"
+              accessibilityLabel={`Options for ${title}`}
+              accessibilityHint="Long press to delete this sound."
+              onLongPress={() => setDeleteTarget(sound)}
+              delayLongPress={350}
+              style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+            >
               <View style={styles.cardText}>
                 <Text style={styles.soundName} numberOfLines={2}>
                   {title}
@@ -618,7 +759,21 @@ export default function LibraryScreen() {
                   />
                 )}
               </Pressable>
-            </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Delete ${title}`}
+                onPress={() => setDeleteTarget(sound)}
+                disabled={isDeleting}
+                style={styles.deleteButton}
+                hitSlop={8}
+              >
+                {isDeleting ? (
+                  <ActivityIndicator color={theme.colors.coral} size="small" />
+                ) : (
+                  <Ionicons name="trash-outline" size={20} color={theme.colors.coral} />
+                )}
+              </Pressable>
+            </Pressable>
           );
         })}
         </View>
@@ -659,9 +814,13 @@ export default function LibraryScreen() {
             isPlaying={playingSoundId === sound.id}
             isLoading={loadingSoundId === sound.id}
             isPremium={isPremium}
+            isOwner={!!userId && sound.user_id === userId}
+            isSaveLoading={unsavingSoundId === sound.id}
+            saveActionIcon="trash-outline"
+            saveActionLabel="Remove"
             onPlay={() => void playCommunitySound(sound)}
             onPulse={() => router.push("/upgrade")}
-            onSave={() => void onUnsaveCommunitySound(sound)}
+            onSave={() => void onRemoveSavedCommunitySound(sound)}
             onUpgrade={() => router.push("/upgrade")}
             onViewProfile={() => router.push(`/creator/${sound.user_id}`)}
             onMore={() => openSafetyForSound(sound)}
@@ -725,7 +884,51 @@ export default function LibraryScreen() {
         onClose={() => setSafetyTarget(null)}
         onReportSubmitted={removeSavedCommunitySound}
         onUserBlocked={removeBlockedUserSounds}
+        onUnshareRequested={onUnshareCommunitySound}
       />
+      <Modal
+        visible={deleteTarget !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!deletingSoundId) {
+            setDeleteTarget(null);
+          }
+        }}
+      >
+        <View style={styles.modalBackdrop}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => {
+              if (!deletingSoundId) {
+                setDeleteTarget(null);
+              }
+            }}
+            accessibilityLabel="Close delete confirmation"
+          />
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Delete this sound?</Text>
+            <Text style={styles.modalHint}>This cannot be undone.</Text>
+            <View style={styles.modalActions}>
+              <Button
+                label={deletingSoundId ? "Deleting..." : "Delete"}
+                onPress={() => void onConfirmDeleteGeneratedSound()}
+                disabled={!!deletingSoundId}
+                style={{ flex: 1 }}
+              />
+              <Button
+                label="Cancel"
+                variant="secondary"
+                onPress={() => setDeleteTarget(null)}
+                disabled={!!deletingSoundId}
+                style={{ flex: 1 }}
+              />
+            </View>
+            {deletingSoundId ? <ActivityIndicator color={theme.colors.primary} /> : null}
+          </View>
+        </View>
+      </Modal>
+      <ResultsToast visible={toastVisible} message={toastMessage} opacityAnim={toastOpacity} theme={theme} />
     </Screen>
   );
 }

@@ -6,7 +6,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BreathingVoice } from "@/src/features/discover/breathingVoicePrefs";
 import {
   ActivityIndicator,
-  Alert,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Pressable,
@@ -30,11 +29,9 @@ import { onPlaybackStopped } from "@/src/features/audio/playbackRegistry";
 import { useAuthSession } from "@/src/features/auth/useAuthSession";
 import {
   COMMUNITY_PAGE_SIZE,
-  deleteCommunitySoundCompletely,
   fetchCommunityFeedPage,
   fetchCommunitySoundsNewToday,
   fetchFeaturedCommunitySound,
-  removeCommunitySoundFromDiscover,
   toggleCommunityPulse,
   toggleCommunitySave,
 } from "@/src/features/community/communityApi";
@@ -43,6 +40,7 @@ import { formatPulseCount } from "@/src/features/community/formatPulses";
 import { toggleCommunityMixPlayback } from "@/src/features/community/communityMixPlayback";
 import { isCommunityMix, type CommunitySound } from "@/src/features/community/types";
 import type { SavedLayerSnapshot } from "@/src/features/mixer/layerPresets";
+import { unshareCommunitySound } from "@/src/features/library/libraryApi";
 import { setPendingMixLoad } from "@/src/features/mixer/pendingMixLoad";
 import { useIsPremium } from "@/src/features/subscription/useIsPremium";
 import { useScrollContentBottomPad } from "@/src/hooks/useScrollBottomInset";
@@ -236,6 +234,8 @@ export default function HomeScreen() {
     setFeatured((prev) => (prev?.id === soundId ? null : prev));
     if (playingSoundId === soundId) {
       setPlayingSoundId(null);
+      void libraryPlayer.unload();
+      void layerMixerEngine.stopMix();
     }
   }, [playingSoundId]);
 
@@ -315,54 +315,36 @@ export default function HomeScreen() {
     [playingSoundId]
   );
 
-  const onManageOwnSound = useCallback(
-    (sound: CommunitySound) => {
-      if (!userId || sound.user_id !== userId) {
-        return;
-      }
-
-      Alert.alert("Manage sound", "Choose what to do with this community post.", [
-        {
-          text: "Remove from Discover",
-          onPress: () => {
-            void removeCommunitySoundFromDiscover(userId, sound.id)
-              .then(() => removeSoundFromLists(sound.id))
-              .catch((e) => {
-                setErrorMessage(e instanceof Error ? e.message : "Could not remove sound.");
-              });
-          },
-        },
-        {
-          text: "Delete completely",
-          style: "destructive",
-          onPress: () => {
-            void deleteCommunitySoundCompletely(userId, sound.id)
-              .then(() => removeSoundFromLists(sound.id))
-              .catch((e) => {
-                setErrorMessage(e instanceof Error ? e.message : "Could not delete sound.");
-              });
-          },
-        },
-        { text: "Cancel", style: "cancel" },
-      ]);
-    },
-    [removeSoundFromLists, userId]
-  );
-
   const openSafetyForSound = useCallback(
     (sound: CommunitySound) => {
-      if (userId && sound.user_id === userId) {
-        onManageOwnSound(sound);
-        return;
-      }
-
       setSafetyTarget({
         soundId: sound.id,
         userId: sound.user_id,
         creatorName: sound.creatorName,
+        isOwner: !!userId && sound.user_id === userId,
       });
     },
-    [onManageOwnSound, userId]
+    [userId]
+  );
+
+  const onUnshareCommunitySound = useCallback(
+    async (soundId: string) => {
+      const previousFeed = feed;
+      const previousNewToday = newToday;
+      const previousFeatured = featured;
+      setErrorMessage(null);
+      removeSoundFromLists(soundId);
+
+      try {
+        await unshareCommunitySound(soundId);
+      } catch (e) {
+        setFeed(previousFeed);
+        setNewToday(previousNewToday);
+        setFeatured(previousFeatured);
+        throw e;
+      }
+    },
+    [featured, feed, newToday, removeSoundFromLists]
   );
 
   const onPulse = useCallback(
@@ -1082,7 +1064,6 @@ export default function HomeScreen() {
                     onSave={() => void onSave(sound)}
                     onUpgrade={openUpgrade}
                     onViewProfile={() => openCreatorProfile(sound.user_id)}
-                    onManageOwn={() => onManageOwnSound(sound)}
                     onMore={() => openSafetyForSound(sound)}
                   />
                 </View>
@@ -1108,7 +1089,6 @@ export default function HomeScreen() {
                 onSave={() => void onSave(sound)}
                 onUpgrade={openUpgrade}
                 onViewProfile={() => openCreatorProfile(sound.user_id)}
-                onManageOwn={() => onManageOwnSound(sound)}
                 onMore={() => openSafetyForSound(sound)}
               />
             ))}
@@ -1131,6 +1111,7 @@ export default function HomeScreen() {
         onClose={() => setSafetyTarget(null)}
         onReportSubmitted={removeSoundFromLists}
         onUserBlocked={removeUserFromLists}
+        onUnshareRequested={onUnshareCommunitySound}
       />
     </Screen>
   );
