@@ -26,13 +26,12 @@ import { libraryPlayer } from "@/src/features/audio/libraryPlayer";
 import { onPlaybackStopped } from "@/src/features/audio/playbackRegistry";
 import { useAuthSession } from "@/src/features/auth/useAuthSession";
 import {
-  deleteCommunitySoundCompletely,
   fetchCreatorProfile,
-  removeCommunitySoundFromDiscover,
   toggleCommunityPulse,
   toggleCommunitySave,
 } from "@/src/features/community/communityApi";
 import { isCommunityMix, type CommunitySound, CreatorProfile } from "@/src/features/community/types";
+import { unshareCommunitySound } from "@/src/features/library/libraryApi";
 import type { SavedLayerSnapshot } from "@/src/features/mixer/layerPresets";
 import { setPendingMixLoad } from "@/src/features/mixer/pendingMixLoad";
 import { useIsPremium } from "@/src/features/subscription/useIsPremium";
@@ -140,61 +139,6 @@ export default function CreatorProfileScreen() {
     [router]
   );
 
-  const onManageOwnSound = useCallback(
-    (sound: CommunitySound) => {
-      if (!viewerId || sound.user_id !== viewerId) {
-        return;
-      }
-
-      Alert.alert("Manage sound", "Choose what to do with this community post.", [
-        {
-          text: "Remove from Discover",
-          onPress: () => {
-            void removeCommunitySoundFromDiscover(viewerId, sound.id)
-              .then(() => {
-                setProfile((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        soundsShared: Math.max(0, prev.soundsShared - 1),
-                        sounds: prev.sounds.filter((row) => row.id !== sound.id),
-                      }
-                    : prev
-                );
-              })
-              .catch((e) => {
-                setErrorMessage(e instanceof Error ? e.message : "Could not remove sound.");
-              });
-          },
-        },
-        {
-          text: "Delete completely",
-          style: "destructive",
-          onPress: () => {
-            void deleteCommunitySoundCompletely(viewerId, sound.id)
-              .then(() => {
-                setProfile((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        soundsShared: Math.max(0, prev.soundsShared - 1),
-                        totalPulses: Math.max(0, prev.totalPulses - sound.pulseCount),
-                        sounds: prev.sounds.filter((row) => row.id !== sound.id),
-                      }
-                    : prev
-                );
-              })
-              .catch((e) => {
-                setErrorMessage(e instanceof Error ? e.message : "Could not delete sound.");
-              });
-          },
-        },
-        { text: "Cancel", style: "cancel" },
-      ]);
-    },
-    [viewerId]
-  );
-
   const removeSoundFromProfile = useCallback((soundId: string) => {
     setProfile((prev) =>
       prev
@@ -228,18 +172,30 @@ export default function CreatorProfileScreen() {
 
   const openSafetyForSound = useCallback(
     (sound: CommunitySound) => {
-      if (viewerId && sound.user_id === viewerId) {
-        onManageOwnSound(sound);
-        return;
-      }
-
       setSafetyTarget({
         soundId: sound.id,
         userId: sound.user_id,
         creatorName: sound.creatorName,
+        isOwner: !!viewerId && sound.user_id === viewerId,
       });
     },
-    [onManageOwnSound, viewerId]
+    [viewerId]
+  );
+
+  const onUnshareCommunitySound = useCallback(
+    async (soundId: string) => {
+      const previousProfile = profile;
+      setErrorMessage(null);
+      removeSoundFromProfile(soundId);
+
+      try {
+        await unshareCommunitySound(soundId);
+      } catch (e) {
+        setProfile(previousProfile);
+        throw e;
+      }
+    },
+    [profile, removeSoundFromProfile]
   );
 
   const onPulse = useCallback(
@@ -487,7 +443,6 @@ export default function CreatorProfileScreen() {
                     onPulse={() => void onPulse(sound)}
                     onSave={() => void onSave(sound)}
                     onUpgrade={() => router.push("/upgrade")}
-                    onManageOwn={() => onManageOwnSound(sound)}
                     onMore={() => openSafetyForSound(sound)}
                   />
                 ))
@@ -503,6 +458,7 @@ export default function CreatorProfileScreen() {
         onClose={() => setSafetyTarget(null)}
         onReportSubmitted={removeSoundFromProfile}
         onUserBlocked={removeBlockedUserFromProfile}
+        onUnshareRequested={onUnshareCommunitySound}
       />
     </Screen>
   );
