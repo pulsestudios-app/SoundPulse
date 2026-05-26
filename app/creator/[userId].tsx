@@ -18,6 +18,10 @@ import { CommunitySoundCard } from "@/src/components/community/CommunitySoundCar
 import { Button } from "@/src/components/core/Button";
 import { ProfileAvatar } from "@/src/components/profile/ProfileAvatar";
 import { Screen } from "@/src/components/core/Screen";
+import {
+  CommunitySafetySheet,
+  type CommunitySafetyTarget,
+} from "@/src/features/safety/CommunitySafetySheet";
 import { libraryPlayer } from "@/src/features/audio/libraryPlayer";
 import { onPlaybackStopped } from "@/src/features/audio/playbackRegistry";
 import { useAuthSession } from "@/src/features/auth/useAuthSession";
@@ -62,6 +66,7 @@ export default function CreatorProfileScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [following, setFollowing] = useState(false);
+  const [safetyTarget, setSafetyTarget] = useState<CommunitySafetyTarget | null>(null);
 
   const [playingSoundId, setPlayingSoundId] = useState<string | null>(null);
   const [loadingSoundId, setLoadingSoundId] = useState<string | null>(null);
@@ -188,6 +193,53 @@ export default function CreatorProfileScreen() {
       ]);
     },
     [viewerId]
+  );
+
+  const removeSoundFromProfile = useCallback((soundId: string) => {
+    setProfile((prev) =>
+      prev
+        ? {
+            ...prev,
+            soundsShared: Math.max(0, prev.soundsShared - 1),
+            sounds: prev.sounds.filter((row) => row.id !== soundId),
+          }
+        : prev
+    );
+    if (playingSoundId === soundId) {
+      setPlayingSoundId(null);
+      void libraryPlayer.unload();
+    }
+  }, [playingSoundId]);
+
+  const removeBlockedUserFromProfile = useCallback((blockedUserId: string) => {
+    setProfile((prev) =>
+      prev
+        ? {
+            ...prev,
+            soundsShared: prev.userId === blockedUserId ? 0 : prev.soundsShared,
+            totalPulses: prev.userId === blockedUserId ? 0 : prev.totalPulses,
+            sounds: prev.sounds.filter((row) => row.user_id !== blockedUserId),
+          }
+        : prev
+    );
+    setPlayingSoundId(null);
+    void libraryPlayer.unload();
+  }, []);
+
+  const openSafetyForSound = useCallback(
+    (sound: CommunitySound) => {
+      if (viewerId && sound.user_id === viewerId) {
+        onManageOwnSound(sound);
+        return;
+      }
+
+      setSafetyTarget({
+        soundId: sound.id,
+        userId: sound.user_id,
+        creatorName: sound.creatorName,
+      });
+    },
+    [onManageOwnSound, viewerId]
   );
 
   const onPulse = useCallback(
@@ -436,6 +488,7 @@ export default function CreatorProfileScreen() {
                     onSave={() => void onSave(sound)}
                     onUpgrade={() => router.push("/upgrade")}
                     onManageOwn={() => onManageOwnSound(sound)}
+                    onMore={() => openSafetyForSound(sound)}
                   />
                 ))
               )}
@@ -445,6 +498,12 @@ export default function CreatorProfileScreen() {
           <Text style={styles.empty}>{errorMessage ?? "Creator not found."}</Text>
         )}
       </ScrollView>
+      <CommunitySafetySheet
+        target={safetyTarget}
+        onClose={() => setSafetyTarget(null)}
+        onReportSubmitted={removeSoundFromProfile}
+        onUserBlocked={removeBlockedUserFromProfile}
+      />
     </Screen>
   );
 }

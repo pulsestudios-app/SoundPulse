@@ -32,6 +32,7 @@ type CommunitySoundCardProps = {
   onUpgrade?: () => void;
   onViewProfile?: () => void;
   onManageOwn?: () => void;
+  onMore?: () => void;
 };
 
 export function CommunitySoundCard({
@@ -47,6 +48,7 @@ export function CommunitySoundCard({
   onUpgrade,
   onViewProfile,
   onManageOwn,
+  onMore,
 }: CommunitySoundCardProps) {
   const theme = useAppTheme();
   const isMix = isCommunityMix(sound);
@@ -141,7 +143,17 @@ export function CommunitySoundCard({
                 </Text>
               </View>
             </View>
-            {isOwner && onManageOwn ? (
+            {onMore ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="More options"
+                onPress={onMore}
+                hitSlop={8}
+                style={styles.moreBtn}
+              >
+                <Ionicons name="ellipsis-horizontal" size={20} color={theme.colors.textSecondary} />
+              </Pressable>
+            ) : isOwner && onManageOwn ? (
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Manage community sound"
@@ -310,5 +322,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#ff6f6144",
     backgroundColor: "#ff6f6114",
+  },
+  moreBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#38bdf844",
+    backgroundColor: "#38bdf812",
   },
 });

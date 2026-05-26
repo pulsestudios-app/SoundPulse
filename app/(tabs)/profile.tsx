@@ -697,6 +697,11 @@ export default function ProfileScreen() {
                 ) : null}
                 <Button label="Manage subscription" variant="secondary" onPress={handleManageSubscription} />
                 <Button
+                  label="Blocked Users"
+                  variant="secondary"
+                  onPress={() => router.push("/blocked-users")}
+                />
+                <Button
                   label={signingOut ? "Signing out..." : "Sign out"}
                   variant="secondary"
                   disabled={signingOut}

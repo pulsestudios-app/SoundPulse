@@ -180,6 +180,7 @@ function RootLayoutInner() {
         <Stack.Screen name="upgrade" />
         <Stack.Screen name="breathing" />
         <Stack.Screen name="stories" />
+        <Stack.Screen name="blocked-users" />
         <Stack.Screen name="creator/[userId]" />
         <Stack.Screen name="privacy-policy" />
         <Stack.Screen name="terms-of-service" />
