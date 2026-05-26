@@ -20,6 +20,10 @@ import {
 import { PlaybackTimer } from "@/src/components/audio/PlaybackTimer";
 import { CommunitySoundCard } from "@/src/components/community/CommunitySoundCard";
 import { Screen } from "@/src/components/core/Screen";
+import {
+  CommunitySafetySheet,
+  type CommunitySafetyTarget,
+} from "@/src/features/safety/CommunitySafetySheet";
 import { layerMixerEngine } from "@/src/features/audio/layerMixerEngine";
 import { libraryPlayer } from "@/src/features/audio/libraryPlayer";
 import { onPlaybackStopped } from "@/src/features/audio/playbackRegistry";
@@ -99,6 +103,7 @@ export default function HomeScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [safetyTarget, setSafetyTarget] = useState<CommunitySafetyTarget | null>(null);
 
   const openUpgrade = useCallback(() => {
     router.push("/upgrade");
@@ -234,6 +239,15 @@ export default function HomeScreen() {
     }
   }, [playingSoundId]);
 
+  const removeUserFromLists = useCallback((blockedUserId: string) => {
+    setFeed((prev) => prev.filter((sound) => sound.user_id !== blockedUserId));
+    setNewToday((prev) => prev.filter((sound) => sound.user_id !== blockedUserId));
+    setFeatured((prev) => (prev?.user_id === blockedUserId ? null : prev));
+    setPlayingSoundId(null);
+    void libraryPlayer.unload();
+    void layerMixerEngine.stopMix();
+  }, []);
+
   const onRemix = useCallback(
     (sound: CommunitySound) => {
       const layers = (sound.mix_layers ?? []) as SavedLayerSnapshot[];
@@ -335,6 +349,22 @@ export default function HomeScreen() {
     [removeSoundFromLists, userId]
   );
 
+  const openSafetyForSound = useCallback(
+    (sound: CommunitySound) => {
+      if (userId && sound.user_id === userId) {
+        onManageOwnSound(sound);
+        return;
+      }
+
+      setSafetyTarget({
+        soundId: sound.id,
+        userId: sound.user_id,
+        creatorName: sound.creatorName,
+      });
+    },
+    [onManageOwnSound, userId]
+  );
+
   const onPulse = useCallback(
     async (sound: CommunitySound) => {
       if (!userId) {
@@ -429,6 +459,22 @@ export default function HomeScreen() {
           textTransform: "uppercase",
           letterSpacing: 1,
           fontWeight: "700",
+        },
+        featuredTopRow: {
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: theme.spacing.md,
+        },
+        featuredMoreBtn: {
+          width: 36,
+          height: 36,
+          borderRadius: 18,
+          alignItems: "center",
+          justifyContent: "center",
+          borderWidth: 1,
+          borderColor: `${theme.colors.sky}55`,
+          backgroundColor: `${theme.colors.sky}14`,
         },
         featuredTitle: {
           ...theme.typography.title,
@@ -685,7 +731,17 @@ export default function HomeScreen() {
                 end={{ x: 1, y: 1 }}
                 style={styles.featuredGradient}
               >
-                <Text style={styles.featuredEyebrow}>Most pulsed · this week</Text>
+                <View style={styles.featuredTopRow}>
+                  <Text style={[styles.featuredEyebrow, { flex: 1 }]}>Most pulsed · this week</Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="More options"
+                    onPress={() => openSafetyForSound(featured)}
+                    style={styles.featuredMoreBtn}
+                  >
+                    <Ionicons name="ellipsis-horizontal" size={20} color={theme.colors.textPrimary} />
+                  </Pressable>
+                </View>
                 <Text style={styles.featuredTitle} numberOfLines={2}>
                   {featuredTitle}
                 </Text>
@@ -1027,6 +1083,7 @@ export default function HomeScreen() {
                     onUpgrade={openUpgrade}
                     onViewProfile={() => openCreatorProfile(sound.user_id)}
                     onManageOwn={() => onManageOwnSound(sound)}
+                    onMore={() => openSafetyForSound(sound)}
                   />
                 </View>
               ))}
@@ -1052,6 +1109,7 @@ export default function HomeScreen() {
                 onUpgrade={openUpgrade}
                 onViewProfile={() => openCreatorProfile(sound.user_id)}
                 onManageOwn={() => onManageOwnSound(sound)}
+                onMore={() => openSafetyForSound(sound)}
               />
             ))}
           </View>
@@ -1068,6 +1126,12 @@ export default function HomeScreen() {
           ) : null}
         </View>
       </ScrollView>
+      <CommunitySafetySheet
+        target={safetyTarget}
+        onClose={() => setSafetyTarget(null)}
+        onReportSubmitted={removeSoundFromLists}
+        onUserBlocked={removeUserFromLists}
+      />
     </Screen>
   );
 }

@@ -5,13 +5,13 @@ import type { SavedLayerSnapshot } from "@/src/features/mixer/layerPresets";
 
 import {
   pulseCommunitySoundViaBackend,
-  reportCommunitySoundViaBackend,
   saveCommunitySoundViaBackend,
   shareAudioToCommunityViaBackend,
   shareMixToCommunityViaBackend,
 } from "./communityBackendApi";
 import type { CommunityCategoryKey } from "./categories";
 import { trackEvent } from "@/src/lib/analytics";
+import { formatUserDisplay, getBlockedUsers, reportSound } from "@/src/features/safety/safetyApi";
 import type {
   CommunitySound,
   CommunitySoundRow,
@@ -23,6 +23,7 @@ const PAGE_SIZE = 10;
 
 type PulseRow = { sound_id: string; created_at: string | null };
 type PublicProfileRow = { id: string; display_name: string | null };
+type ReportedSoundRow = { sound_id: string | null };
 
 function twentyFourHoursAgoIso(): string {
   return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -39,11 +40,7 @@ function startOfCurrentWeekIso(): string {
 }
 
 function fallbackCreatorName(profile: PublicProfileRow | undefined, userId: string): string {
-  const display = profile?.display_name?.trim();
-  if (display) {
-    return display;
-  }
-  return `Creator ${userId.slice(0, 6)}`;
+  return formatUserDisplay(userId, profile?.display_name);
 }
 
 async function fetchPulseStats(soundIds: string[]): Promise<{
@@ -109,6 +106,10 @@ async function enrichCommunitySounds(
   rows: CommunitySoundRow[],
   userId: string | undefined
 ): Promise<CommunitySound[]> {
+  if (rows.length === 0) {
+    return [];
+  }
+
   const soundIds = rows.map((r) => r.id);
   const userIds = [...new Set(rows.map((r) => r.user_id))];
 
@@ -131,6 +132,48 @@ async function enrichCommunitySounds(
     hasPulsed: pulsed.has(row.id),
     hasSaved: saved.has(row.id),
   }));
+}
+
+async function fetchReportedSoundIds(userId: string, soundIds: string[]): Promise<Set<string>> {
+  const reported = new Set<string>();
+  if (soundIds.length === 0) {
+    return reported;
+  }
+
+  const { data, error } = await supabase
+    .from("reports")
+    .select("sound_id")
+    .eq("reporter_id", userId)
+    .in("sound_id", soundIds);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  for (const row of (data ?? []) as ReportedSoundRow[]) {
+    if (typeof row.sound_id === "string") {
+      reported.add(row.sound_id);
+    }
+  }
+  return reported;
+}
+
+async function filterRowsForSafety(
+  rows: CommunitySoundRow[],
+  userId: string | undefined
+): Promise<CommunitySoundRow[]> {
+  if (!userId || rows.length === 0) {
+    return rows;
+  }
+
+  const soundIds = rows.map((row) => row.id);
+  const [blockedUserIds, reportedSoundIds] = await Promise.all([
+    getBlockedUsers(),
+    fetchReportedSoundIds(userId, soundIds),
+  ]);
+  const blockedUsers = new Set(blockedUserIds);
+
+  return rows.filter((row) => !blockedUsers.has(row.user_id) && !reportedSoundIds.has(row.id));
 }
 
 function baseCommunityQuery(category: CommunityCategoryKey | null) {
@@ -162,7 +205,8 @@ export async function fetchCommunityFeedPage(options: {
     throw new Error(error.message);
   }
 
-  let sounds = await enrichCommunitySounds((data ?? []) as CommunitySoundRow[], options.userId);
+  const rows = await filterRowsForSafety((data ?? []) as CommunitySoundRow[], options.userId);
+  let sounds = await enrichCommunitySounds(rows, options.userId);
 
   if (options.trending24h) {
     sounds = [...sounds].sort((a, b) => b.pulses24h - a.pulses24h || b.pulseCount - a.pulseCount);
@@ -186,7 +230,8 @@ export async function fetchCommunitySoundsNewToday(userId?: string): Promise<Com
     throw new Error(error.message);
   }
 
-  return enrichCommunitySounds((data ?? []) as CommunitySoundRow[], userId);
+  const rows = await filterRowsForSafety((data ?? []) as CommunitySoundRow[], userId);
+  return enrichCommunitySounds(rows, userId);
 }
 
 export async function fetchFeaturedCommunitySound(userId?: string): Promise<CommunitySound | null> {
@@ -221,7 +266,8 @@ export async function fetchFeaturedCommunitySound(userId?: string): Promise<Comm
     if (error || !fallback?.length) {
       return null;
     }
-    const enriched = await enrichCommunitySounds(fallback as CommunitySoundRow[], userId);
+    const rows = await filterRowsForSafety(fallback as CommunitySoundRow[], userId);
+    const enriched = await enrichCommunitySounds(rows, userId);
     return enriched[0] ?? null;
   }
 
@@ -237,7 +283,8 @@ export async function fetchFeaturedCommunitySound(userId?: string): Promise<Comm
     return null;
   }
 
-  const enriched = await enrichCommunitySounds([sound as CommunitySoundRow], userId);
+  const rows = await filterRowsForSafety([sound as CommunitySoundRow], userId);
+  const enriched = await enrichCommunitySounds(rows, userId);
   return enriched[0] ?? null;
 }
 
@@ -316,7 +363,7 @@ export async function reportCommunitySound(
   soundId: string,
   reason: string
 ): Promise<void> {
-  await reportCommunitySoundViaBackend(soundId, reason);
+  await reportSound(soundId, reason);
   void trackEvent("report_submitted");
 }
 
@@ -358,7 +405,8 @@ export async function fetchSavedCommunitySounds(userId: string): Promise<Communi
     (a, b) => (orderMap.get(a.id) ?? 0) - (orderMap.get(b.id) ?? 0)
   );
 
-  const enriched = await enrichCommunitySounds(rows, userId);
+  const safeRows = await filterRowsForSafety(rows, userId);
+  const enriched = await enrichCommunitySounds(safeRows, userId);
   return enriched.map((sound) => ({ ...sound, hasSaved: true }));
 }
 
@@ -390,7 +438,8 @@ export async function fetchCreatorProfile(
 
   const profile = profileResult.data as PublicProfileRow | null;
   const soundRows = (soundsResult.data ?? []) as CommunitySoundRow[];
-  const soundIds = soundRows.map((row) => row.id);
+  const safeRows = await filterRowsForSafety(soundRows, viewerId);
+  const soundIds = safeRows.map((row) => row.id);
 
   let totalPulses = 0;
   if (soundIds.length > 0) {
@@ -404,12 +453,12 @@ export async function fetchCreatorProfile(
     totalPulses = count ?? 0;
   }
 
-  const sounds = await enrichCommunitySounds(soundRows, viewerId);
+  const sounds = await enrichCommunitySounds(safeRows, viewerId);
 
   return {
     userId: creatorId,
     displayName: fallbackCreatorName(profile ?? undefined, creatorId),
-    soundsShared: soundRows.length,
+    soundsShared: safeRows.length,
     totalPulses,
     sounds,
   };

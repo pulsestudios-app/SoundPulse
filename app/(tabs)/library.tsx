@@ -14,6 +14,10 @@ import {
 import { PlaybackTimer } from "@/src/components/audio/PlaybackTimer";
 import { CommunitySoundCard } from "@/src/components/community/CommunitySoundCard";
 import { Screen } from "@/src/components/core/Screen";
+import {
+  CommunitySafetySheet,
+  type CommunitySafetyTarget,
+} from "@/src/features/safety/CommunitySafetySheet";
 import { libraryPlayer } from "@/src/features/audio/libraryPlayer";
 import { onPlaybackStopped } from "@/src/features/audio/playbackRegistry";
 import { useAuthSession } from "@/src/features/auth/useAuthSession";
@@ -102,6 +106,7 @@ export default function LibraryScreen() {
   const [activeSoundId, setActiveSoundId] = useState<string | null>(null);
   const [playingSoundId, setPlayingSoundId] = useState<string | null>(null);
   const [loadingSoundId, setLoadingSoundId] = useState<string | null>(null);
+  const [safetyTarget, setSafetyTarget] = useState<CommunitySafetyTarget | null>(null);
 
   const styles = useMemo(
     () =>
@@ -450,6 +455,38 @@ export default function LibraryScreen() {
     [userId]
   );
 
+  const removeSavedCommunitySound = useCallback((soundId: string) => {
+    setSavedSounds((prev) => prev.filter((row) => row.id !== soundId));
+    if (playingSoundId === soundId) {
+      setPlayingSoundId(null);
+      setActiveSoundId(null);
+      void libraryPlayer.unload();
+    }
+  }, [playingSoundId]);
+
+  const removeBlockedUserSounds = useCallback((blockedUserId: string) => {
+    setSavedSounds((prev) => prev.filter((row) => row.user_id !== blockedUserId));
+    setPlayingSoundId(null);
+    setActiveSoundId(null);
+    void libraryPlayer.unload();
+  }, []);
+
+  const openSafetyForSound = useCallback(
+    (sound: CommunitySound) => {
+      if (userId && sound.user_id === userId) {
+        setErrorMessage("You cannot report or block your own sound.");
+        return;
+      }
+
+      setSafetyTarget({
+        soundId: sound.id,
+        userId: sound.user_id,
+        creatorName: sound.creatorName,
+      });
+    },
+    [userId]
+  );
+
   const sortedMySounds = useMemo(() => {
     const copy = [...sounds];
     if (mySort === "recent") {
@@ -627,6 +664,7 @@ export default function LibraryScreen() {
             onSave={() => void onUnsaveCommunitySound(sound)}
             onUpgrade={() => router.push("/upgrade")}
             onViewProfile={() => router.push(`/creator/${sound.user_id}`)}
+            onMore={() => openSafetyForSound(sound)}
           />
         ))}
       </View>
@@ -682,6 +720,12 @@ export default function LibraryScreen() {
 
         {activeTab === "my" ? renderMySounds() : renderSavedSounds()}
       </ScrollView>
+      <CommunitySafetySheet
+        target={safetyTarget}
+        onClose={() => setSafetyTarget(null)}
+        onReportSubmitted={removeSavedCommunitySound}
+        onUserBlocked={removeBlockedUserSounds}
+      />
     </Screen>
   );
 }
