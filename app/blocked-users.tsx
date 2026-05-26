@@ -94,7 +94,7 @@ export default function BlockedUsersScreen() {
           color: theme.colors.textPrimary,
           fontWeight: "800",
         },
-        userId: {
+        meta: {
           ...theme.typography.caption,
           color: theme.colors.textSecondary,
           marginTop: 3,
@@ -253,10 +253,10 @@ export default function BlockedUsersScreen() {
                 <ProfileAvatar name={user.displayName} size={44} />
                 <View style={styles.identity}>
                   <Text style={styles.name} numberOfLines={1}>
-                    {user.displayName}
+                    Blocked: {user.displayName}
                   </Text>
-                  <Text style={styles.userId} numberOfLines={1}>
-                    {user.id}
+                  <Text style={styles.meta} numberOfLines={1}>
+                    Their sounds are hidden from your community feed.
                   </Text>
                 </View>
                 <Button
