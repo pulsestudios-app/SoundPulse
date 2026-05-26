@@ -14,32 +14,17 @@ export async function userHasPremium(userId: string): Promise<boolean> {
     const status = typeof row.status === "string" ? row.status.trim().toLowerCase() : "";
     const expiresAt = row.expires_at ? new Date(row.expires_at) : null;
     const stillActive = !expiresAt || expiresAt.getTime() > Date.now();
-    if (stillActive && (status === "active" || status === "trialing") && plan && plan !== "free") {
+    if (
+      stillActive &&
+      ["active", "trialing", "in_grace_period", "canceled"].includes(status) &&
+      plan &&
+      plan !== "free"
+    ) {
       return true;
     }
   }
 
-  const { data: profile } = await supabaseAdmin
-    .from("profiles")
-    .select("plan, subscription_active, subscription_status")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (!profile) {
-    return false;
-  }
-
-  const plan = typeof profile.plan === "string" ? profile.plan.trim().toLowerCase() : "";
-  const subStatus =
-    typeof profile.subscription_status === "string" ? profile.subscription_status.trim().toLowerCase() : "";
-  const subActive = profile.subscription_active === true;
-
-  return (
-    subActive &&
-    (subStatus === "active" || subStatus === "trialing") &&
-    Boolean(plan) &&
-    plan !== "free"
-  );
+  return false;
 }
 
 export async function userCanSubmitReport(userId: string, emailConfirmed: boolean): Promise<boolean> {

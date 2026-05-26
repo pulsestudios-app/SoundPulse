@@ -4,6 +4,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import helmet from "helmet";
 
 import { globalIpRateLimit } from "./middleware/globalIpRateLimit.js";
+import { subscriptionsRouter } from "./routes/subscriptions.js";
 import { v1Router } from "./routes/v1.js";
 
 const sentryDsn = process.env.SENTRY_DSN?.trim();
@@ -90,6 +91,7 @@ app.use("/v1", (req: Request, res: Response, next: NextFunction) => {
 });
 
 app.use("/v1", v1Router);
+app.use("/api/subscriptions", validateAppKey, subscriptionsRouter);
 
 if (sentryDsn) {
   Sentry.setupExpressErrorHandler(app);

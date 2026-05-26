@@ -57,14 +57,48 @@ function getAndroidPublisher(): androidpublisher_v3.Androidpublisher {
 const ACTIVE_SUBSCRIPTION_STATES = new Set([
   "SUBSCRIPTION_STATE_ACTIVE",
   "SUBSCRIPTION_STATE_IN_GRACE_PERIOD",
+  "SUBSCRIPTION_STATE_CANCELED",
 ]);
+
+type VerifiedPurchaseDetails = {
+  status: "active" | "in_grace_period" | "canceled";
+  expiresAt: string | null;
+  autoRenewing: boolean | null;
+  packageName: string;
+  productId: string;
+  purchaseToken: string;
+};
+
+export type VerifiedPlayPurchaseResult = VerifiedPurchaseDetails & {
+  tier: PlanTier;
+};
+
+function statusFromSubscriptionState(state: string): VerifiedPurchaseDetails["status"] {
+  if (state === "SUBSCRIPTION_STATE_IN_GRACE_PERIOD") {
+    return "in_grace_period";
+  }
+  if (state === "SUBSCRIPTION_STATE_CANCELED") {
+    return "canceled";
+  }
+  return "active";
+}
+
+function assertUnexpired(expiresAt: string | null): void {
+  if (!expiresAt) {
+    return;
+  }
+  const expires = new Date(expiresAt).getTime();
+  if (!Number.isFinite(expires) || expires <= Date.now()) {
+    throw new PlayPurchaseVerificationError("Subscription has expired.");
+  }
+}
 
 async function verifySubscriptionPurchase(
   publisher: androidpublisher_v3.Androidpublisher,
   packageName: string,
   productId: string,
   purchaseToken: string
-): Promise<void> {
+): Promise<VerifiedPurchaseDetails> {
   try {
     const { data } = await publisher.purchases.subscriptionsv2.get({
       packageName,
@@ -95,7 +129,18 @@ async function verifySubscriptionPurchase(
       throw new PlayPurchaseVerificationError("Test purchases are not allowed in production.");
     }
 
-    return;
+    const line = matchingLine ?? lineItems[0];
+    const expiresAt = line?.expiryTime ?? null;
+    assertUnexpired(expiresAt);
+
+    return {
+      status: statusFromSubscriptionState(state),
+      expiresAt,
+      autoRenewing: line?.autoRenewingPlan?.autoRenewEnabled ?? null,
+      packageName,
+      productId,
+      purchaseToken,
+    };
   } catch (err) {
     if (err instanceof PlayPurchaseVerificationError) {
       throw err;
@@ -122,8 +167,32 @@ async function verifySubscriptionPurchase(
   }
 
   if (legacy.cancelReason != null && legacy.cancelReason !== 0) {
-    throw new PlayPurchaseVerificationError("Subscription is canceled.");
+    const expiresAt = legacy.expiryTimeMillis
+      ? new Date(Number(legacy.expiryTimeMillis)).toISOString()
+      : null;
+    assertUnexpired(expiresAt);
+    return {
+      status: "canceled",
+      expiresAt,
+      autoRenewing: Boolean(legacy.autoRenewing),
+      packageName,
+      productId,
+      purchaseToken,
+    };
   }
+
+  const expiresAt = legacy.expiryTimeMillis
+    ? new Date(Number(legacy.expiryTimeMillis)).toISOString()
+    : null;
+  assertUnexpired(expiresAt);
+  return {
+    status: "active",
+    expiresAt,
+    autoRenewing: Boolean(legacy.autoRenewing),
+    packageName,
+    productId,
+    purchaseToken,
+  };
 }
 
 async function verifyOneTimeProductPurchase(
@@ -131,7 +200,7 @@ async function verifyOneTimeProductPurchase(
   packageName: string,
   productId: string,
   purchaseToken: string
-): Promise<void> {
+): Promise<VerifiedPurchaseDetails> {
   const { data } = await publisher.purchases.products.get({
     packageName,
     productId,
@@ -147,25 +216,29 @@ async function verifyOneTimeProductPurchase(
   if (data.productId && data.productId !== productId) {
     throw new PlayPurchaseVerificationError("Product ID mismatch.");
   }
+
+  return {
+    status: "active",
+    expiresAt: "2099-01-01T00:00:00.000Z",
+    autoRenewing: false,
+    packageName,
+    productId,
+    purchaseToken,
+  };
 }
 
-function subscriptionExpiresAt(tier: PlanTier): string {
-  if (tier === "lifetime") {
-    return "2099-01-01T00:00:00.000Z";
-  }
-  const expires = new Date();
-  expires.setUTCDate(expires.getUTCDate() + 32);
-  return expires.toISOString();
-}
-
-export async function applyVerifiedTierToProfile(userId: string, tier: PlanTier): Promise<void> {
+export async function applyVerifiedTierToProfile(
+  userId: string,
+  tier: PlanTier,
+  purchase: VerifiedPurchaseDetails
+): Promise<void> {
   const { error } = await supabaseAdmin
     .from("profiles")
     .update({
       plan: tier,
       subscription_tier: tier,
       subscription_active: true,
-      subscription_status: "active",
+      subscription_status: purchase.status,
     })
     .eq("id", userId);
 
@@ -173,12 +246,33 @@ export async function applyVerifiedTierToProfile(userId: string, tier: PlanTier)
     throw new Error(`Failed to update profile: ${error.message}`);
   }
 
-  const { error: subscriptionError } = await supabaseAdmin.from("subscriptions").insert({
+  const row = {
     user_id: userId,
     plan: tier,
-    status: "active",
-    expires_at: subscriptionExpiresAt(tier),
-  });
+    status: purchase.status,
+    expires_at: purchase.expiresAt,
+    product_id: purchase.productId,
+    purchase_token: purchase.purchaseToken,
+    package_name: purchase.packageName,
+    auto_renewing: purchase.autoRenewing,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data: existing, error: lookupError } = await supabaseAdmin
+    .from("subscriptions")
+    .select("id")
+    .eq("purchase_token", purchase.purchaseToken)
+    .maybeSingle();
+
+  if (lookupError) {
+    throw new Error(`Failed to look up subscription: ${lookupError.message}`);
+  }
+
+  const write = existing?.id
+    ? supabaseAdmin.from("subscriptions").update(row).eq("id", existing.id)
+    : supabaseAdmin.from("subscriptions").insert(row);
+
+  const { error: subscriptionError } = await write;
 
   if (subscriptionError) {
     throw new Error(`Failed to record subscription: ${subscriptionError.message}`);
@@ -256,8 +350,9 @@ export async function rejectUnverifiedPlayPurchase(
 export async function verifyAndGrantPlayPurchase(
   userId: string,
   productId: string,
-  purchaseToken: string
-): Promise<PlanTier> {
+  purchaseToken: string,
+  clientPackageName?: string
+): Promise<VerifiedPlayPurchaseResult> {
   if (!isKnownPlayProductId(productId)) {
     throw new PlayPurchaseVerificationError(`Unknown product ID: ${productId}`);
   }
@@ -274,18 +369,23 @@ export async function verifyAndGrantPlayPurchase(
 
   const publisher = getAndroidPublisher();
   const packageName = getPackageName();
+  const submittedPackageName = clientPackageName?.trim();
+  if (submittedPackageName && submittedPackageName !== packageName) {
+    throw new PlayPurchaseVerificationError("Package name does not match this app.");
+  }
 
   try {
+    let verified: VerifiedPurchaseDetails;
     if (isPlayLifetimeProduct(productId)) {
-      await verifyOneTimeProductPurchase(publisher, packageName, productId, token);
+      verified = await verifyOneTimeProductPurchase(publisher, packageName, productId, token);
     } else if (isPlaySubscriptionProduct(productId)) {
-      await verifySubscriptionPurchase(publisher, packageName, productId, token);
+      verified = await verifySubscriptionPurchase(publisher, packageName, productId, token);
     } else {
       throw new PlayPurchaseVerificationError(`Unsupported product type: ${productId}`);
     }
 
-    await applyVerifiedTierToProfile(userId, tier);
-    return tier;
+    await applyVerifiedTierToProfile(userId, tier, verified);
+    return { ...verified, tier };
   } catch (err) {
     const refunded = await rejectUnverifiedPlayPurchase(productId, token);
     if (err instanceof PlayPurchaseVerificationError) {

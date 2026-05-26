@@ -1,9 +1,18 @@
 package com.soundpulseapp.foregroundservice
 
 import android.content.Intent
+import android.os.Build
 import com.soundpulseapp.android.ForegroundAudioService
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+
+private fun startPlaybackService(context: android.content.Context, intent: Intent) {
+  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+    context.startForegroundService(intent)
+  } else {
+    context.startService(intent)
+  }
+}
 
 class PulseAudioModule : Module() {
   override fun definition() = ModuleDefinition {
@@ -16,7 +25,7 @@ class PulseAudioModule : Module() {
         putExtra(ForegroundAudioService.EXTRA_TITLE, title)
         putExtra(ForegroundAudioService.EXTRA_SUBTITLE, subtitle)
       }
-      context.startForegroundService(intent)
+      startPlaybackService(context, intent)
       null
     }
 
@@ -37,7 +46,7 @@ class PulseAudioModule : Module() {
         putExtra(ForegroundAudioService.EXTRA_TITLE, title)
         putExtra(ForegroundAudioService.EXTRA_SUBTITLE, artist)
       }
-      context.startForegroundService(intent)
+      startPlaybackService(context, intent)
       null
     }
 

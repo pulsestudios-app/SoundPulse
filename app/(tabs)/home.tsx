@@ -3,7 +3,6 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { BreathingVoice } from "@/src/features/discover/breathingVoicePrefs";
 import {
   ActivityIndicator,
   type NativeScrollEvent,
@@ -72,14 +71,8 @@ function patchSound(
   return sounds.map((s) => (s.id === id ? { ...s, ...patch } : s));
 }
 
-import { BreathingVoiceToggle } from "@/src/features/discover/BreathingVoiceToggle";
-import {
-  loadBreathingVoices,
-  setBreathingVoice,
-} from "@/src/features/discover/breathingVoicePrefs";
 import {
   BEDTIME_STORIES,
-  BREATHING_EXERCISES,
   showComingSoonAlert,
 } from "@/src/features/discover/placeholders";
 export default function HomeScreen() {
@@ -93,7 +86,6 @@ export default function HomeScreen() {
   const [featured, setFeatured] = useState<CommunitySound | null>(null);
   const [newToday, setNewToday] = useState<CommunitySound[]>([]);
   const [feed, setFeed] = useState<CommunitySound[]>([]);
-  const [breathingVoices, setBreathingVoices] = useState<Record<string, BreathingVoice>>({});
   const [selectedCategory, setSelectedCategory] = useState<CommunityCategoryKey | null>(null);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
@@ -122,15 +114,6 @@ export default function HomeScreen() {
     return onPlaybackStopped(() => {
       setPlayingSoundId(null);
     });
-  }, []);
-
-  useEffect(() => {
-    void loadBreathingVoices(BREATHING_EXERCISES.map((item) => item.id)).then(setBreathingVoices);
-  }, []);
-
-  const onBreathingVoiceChange = useCallback((exerciseId: string, voice: BreathingVoice) => {
-    setBreathingVoices((prev) => ({ ...prev, [exerciseId]: voice }));
-    void setBreathingVoice(exerciseId, voice);
   }, []);
 
   const loadFeedPage = useCallback(
@@ -882,66 +865,6 @@ export default function HomeScreen() {
         ) : !loadingInitial ? (
           <Text style={styles.empty}>No featured sound yet — be the first to share from Generate.</Text>
         ) : null}
-
-        <View>
-          <Text style={styles.sectionLabel}>Breathing Exercises</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.placeholderScroll}>
-            {BREATHING_EXERCISES.map((item) => {
-              const voice = breathingVoices[item.id] ?? item.defaultVoice;
-              return (
-                <View key={item.id} style={styles.placeholderCardOuter}>
-                  <LinearGradient
-                    colors={[`${theme.colors.primary}88`, `${theme.colors.sky}55`, `${theme.colors.primary}33`]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.placeholderCardGradient}
-                  >
-                    <View style={styles.placeholderCard}>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={`${item.title}, 2 minutes`}
-                        onPress={() => showComingSoonAlert(item.title)}
-                        style={{ flex: 1, gap: theme.spacing.sm }}
-                      >
-                        <View style={styles.placeholderCardTop}>
-                          <View style={styles.placeholderIconWrap}>
-                            <Ionicons name={item.icon} size={20} color={theme.colors.primary} />
-                          </View>
-                        </View>
-                        <View style={{ gap: 4 }}>
-                          <Text style={styles.placeholderTitle} numberOfLines={2}>
-                            {item.title}
-                          </Text>
-                          <Text style={styles.placeholderSubtitle} numberOfLines={1}>
-                            {item.subtitle}
-                          </Text>
-                          <Text style={styles.placeholderDuration}>{item.duration}</Text>
-                        </View>
-                        <View style={styles.placeholderPlayBtn} pointerEvents="none">
-                          <Ionicons name="play" size={18} color={theme.colors.primary} />
-                        </View>
-                      </Pressable>
-                      <BreathingVoiceToggle
-                        compact
-                        value={voice}
-                        onChange={(next) => onBreathingVoiceChange(item.id, next)}
-                      />
-                    </View>
-                  </LinearGradient>
-                </View>
-              );
-            })}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="View all breathing exercises"
-              onPress={() => router.push("/breathing")}
-              style={styles.viewAllBtn}
-            >
-              <Text style={styles.viewAllText}>View All</Text>
-              <Ionicons name="arrow-forward" size={18} color={theme.colors.primary} />
-            </Pressable>
-          </ScrollView>
-        </View>
 
         <View>
           <Text style={styles.sectionLabel}>Bedtime Stories</Text>
