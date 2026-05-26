@@ -8,8 +8,8 @@ type BlockedUserRow = {
   blocked_id: string;
 };
 
-type PublicProfileRow = {
-  id: string;
+type BlockedUserProfileRow = {
+  blocked_id: string;
   display_name: string | null;
 };
 
@@ -17,6 +17,8 @@ export type BlockedUserProfile = {
   id: string;
   displayName: string;
 };
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 async function getCurrentUserId(): Promise<string> {
   const {
@@ -33,9 +35,15 @@ async function getCurrentUserId(): Promise<string> {
   return user.id;
 }
 
-function fallbackCreatorName(profile: PublicProfileRow | undefined, userId: string): string {
-  const displayName = profile?.display_name?.trim();
-  return displayName || `Creator ${userId.slice(0, 6)}`;
+export function formatUserDisplay(userId: string, displayName?: string | null): string {
+  const normalizedName = displayName?.trim();
+  if (normalizedName && !UUID_PATTERN.test(normalizedName)) {
+    return normalizedName;
+  }
+
+  const compactId = userId.replace(/-/g, "");
+  const suffix = (compactId || userId).slice(-6);
+  return `Creator ${suffix || "unknown"}`;
 }
 
 async function getReportedUserId(soundId: string, reporterId: string): Promise<string | null> {
@@ -149,27 +157,14 @@ export async function getBlockedUsers(): Promise<string[]> {
 }
 
 export async function getBlockedUserProfiles(): Promise<BlockedUserProfile[]> {
-  const blockedIds = await getBlockedUsers();
-  if (blockedIds.length === 0) {
-    return [];
-  }
-
-  const { data, error } = await supabase
-    .from("profiles_public")
-    .select("id, display_name")
-    .in("id", blockedIds);
+  const { data, error } = await supabase.rpc("get_blocked_users_with_profiles");
 
   if (error) {
     throw new Error(error.message);
   }
 
-  const profileMap = new Map<string, PublicProfileRow>();
-  for (const profile of (data ?? []) as PublicProfileRow[]) {
-    profileMap.set(profile.id, profile);
-  }
-
-  return blockedIds.map((id) => ({
-    id,
-    displayName: fallbackCreatorName(profileMap.get(id), id),
+  return ((data ?? []) as BlockedUserProfileRow[]).map((row) => ({
+    id: row.blocked_id,
+    displayName: formatUserDisplay(row.blocked_id, row.display_name),
   }));
 }

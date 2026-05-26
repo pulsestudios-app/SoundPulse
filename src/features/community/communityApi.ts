@@ -11,7 +11,7 @@ import {
 } from "./communityBackendApi";
 import type { CommunityCategoryKey } from "./categories";
 import { trackEvent } from "@/src/lib/analytics";
-import { getBlockedUsers, reportSound } from "@/src/features/safety/safetyApi";
+import { formatUserDisplay, getBlockedUsers, reportSound } from "@/src/features/safety/safetyApi";
 import type {
   CommunitySound,
   CommunitySoundRow,
@@ -40,11 +40,7 @@ function startOfCurrentWeekIso(): string {
 }
 
 function fallbackCreatorName(profile: PublicProfileRow | undefined, userId: string): string {
-  const display = profile?.display_name?.trim();
-  if (display) {
-    return display;
-  }
-  return `Creator ${userId.slice(0, 6)}`;
+  return formatUserDisplay(userId, profile?.display_name);
 }
 
 async function fetchPulseStats(soundIds: string[]): Promise<{

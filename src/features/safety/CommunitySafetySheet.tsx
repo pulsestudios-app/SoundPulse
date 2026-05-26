@@ -13,7 +13,7 @@ import {
 import { Button } from "@/src/components/core/Button";
 import { Input } from "@/src/components/core/Input";
 import { ResultsToast } from "@/src/components/core/ResultsToast";
-import { blockUser, reportSound } from "@/src/features/safety/safetyApi";
+import { blockUser, formatUserDisplay, reportSound } from "@/src/features/safety/safetyApi";
 import { useAppTheme } from "@/src/theme";
 
 const REPORT_REASONS = [
@@ -57,6 +57,9 @@ export function CommunitySafetySheet({
   const toastOpacity = useRef(new Animated.Value(0)).current;
 
   const busy = submitting || blocking;
+  const targetDisplayName = target
+    ? formatUserDisplay(target.userId, target.creatorName)
+    : "this user";
 
   const styles = useMemo(
     () =>
@@ -229,7 +232,7 @@ export function CommunitySafetySheet({
         style={styles.actionRow}
       >
         <Ionicons name="ban-outline" size={20} color={theme.colors.sky} />
-        <Text style={styles.actionText}>Block this user</Text>
+        <Text style={styles.actionText}>Block {targetDisplayName}</Text>
       </Pressable>
       <Button label="Cancel" variant="secondary" onPress={close} />
     </>
@@ -238,6 +241,7 @@ export function CommunitySafetySheet({
   const renderReport = () => (
     <>
       <Text style={styles.title}>Report this sound</Text>
+      <Text style={styles.hint}>Report sound by {targetDisplayName}.</Text>
       {REPORT_REASONS.map((option) => {
         const active = reason === option;
         return (
@@ -300,7 +304,7 @@ export function CommunitySafetySheet({
 
   const renderBlock = () => (
     <>
-      <Text style={styles.title}>Block this user?</Text>
+      <Text style={styles.title}>Block {targetDisplayName}?</Text>
       <Text style={styles.hint}>You won't see their sounds anymore</Text>
       {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
       <View style={styles.buttonRow}>
