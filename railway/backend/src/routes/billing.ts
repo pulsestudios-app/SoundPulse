@@ -15,6 +15,7 @@ export const billingRouter = express.Router();
 type VerifyBody = {
   productId?: unknown;
   purchaseToken?: unknown;
+  packageName?: unknown;
 };
 
 type RestorePurchaseInput = {
@@ -24,22 +25,24 @@ type RestorePurchaseInput = {
 
 const TIER_RANK: Record<PlanTier, number> = {
   free: 0,
+  basic: 1,
   pro_weekly: 1,
-  student: 2,
-  semester: 3,
+  student: 1,
+  semester: 1,
   pro: 4,
   yearly: 5,
   unlimited: 6,
   lifetime: 7,
 };
 
-function parseVerifyBody(body: VerifyBody): { productId: string; purchaseToken: string } | null {
+function parseVerifyBody(body: VerifyBody): { productId: string; purchaseToken: string; packageName?: string } | null {
   const productId = typeof body.productId === "string" ? body.productId.trim() : "";
   const purchaseToken = typeof body.purchaseToken === "string" ? body.purchaseToken.trim() : "";
+  const packageName = typeof body.packageName === "string" ? body.packageName.trim() : "";
   if (!productId || !purchaseToken) {
     return null;
   }
-  return { productId, purchaseToken };
+  return { productId, purchaseToken, packageName: packageName || undefined };
 }
 
 function sendBillingError(res: Response, status: number, code: string, message: string, extra?: Record<string, unknown>) {
@@ -65,8 +68,20 @@ billingRouter.post("/play/verify", authenticateUser, billingVerifyRateLimit, asy
   }
 
   try {
-    const tier = await verifyAndGrantPlayPurchase(userId, parsed.productId, parsed.purchaseToken);
-    res.json({ ok: true, tier, productId: parsed.productId });
+    const result = await verifyAndGrantPlayPurchase(
+      userId,
+      parsed.productId,
+      parsed.purchaseToken,
+      parsed.packageName
+    );
+    res.json({
+      ok: true,
+      tier: result.tier,
+      plan: result.tier,
+      productId: parsed.productId,
+      status: result.status,
+      expiresAt: result.expiresAt,
+    });
   } catch (err) {
     if (err instanceof PlayBillingConfigError) {
       sendBillingError(res, 500, "CONFIG_ERROR", err.message);
@@ -114,7 +129,8 @@ billingRouter.post("/play/restore", authenticateUser, billingRestoreRateLimit, a
 
   for (const purchase of inputs) {
     try {
-      const tier = await verifyAndGrantPlayPurchase(userId, purchase.productId, purchase.purchaseToken);
+      const result = await verifyAndGrantPlayPurchase(userId, purchase.productId, purchase.purchaseToken);
+      const tier = result.tier;
       const rank = TIER_RANK[tier];
       if (rank > bestRank) {
         bestRank = rank;

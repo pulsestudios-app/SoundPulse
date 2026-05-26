@@ -12,6 +12,10 @@ export function isPremiumSubscription(row: SubscriptionRow | null | undefined): 
   const status = row.status?.toLowerCase() ?? "";
   const expiresAt = row.expires_at ? new Date(row.expires_at) : null;
   const stillActive = !expiresAt || expiresAt.getTime() > Date.now();
-  const paidStatus = status === "active" || status === "trialing";
+  const paidStatus =
+    status === "active" ||
+    status === "trialing" ||
+    status === "in_grace_period" ||
+    status === "canceled";
   return paidStatus && stillActive && plan !== "free" && plan !== "";
 }

@@ -28,6 +28,8 @@ import { useAuthSession } from "@/src/features/auth/useAuthSession";
 import { submitFeedback, type FeedbackType } from "@/src/features/feedback/feedbackApi";
 import { FREE_AI_GENERATIONS_PER_MONTH } from "@/src/features/generate/entitlementsStore";
 import { updateProfileDisplayName } from "@/src/features/profile/profileApi";
+import { SUBSCRIPTION_PLANS, type SubscriptionPlanId } from "@/src/features/subscription/plans";
+import { isPremiumSubscription } from "@/src/features/subscription/subscriptionUtils";
 import { useScrollContentBottomPad } from "@/src/hooks/useScrollBottomInset";
 import { getAnalyticsOptOut, setAnalyticsOptOut, syncAnalyticsUserProperties, trackEvent } from "@/src/lib/analytics";
 import { supabase } from "@/src/lib/supabase";
@@ -42,6 +44,7 @@ type SubscriptionRow = {
   plan: string | null;
   status: string | null;
   expires_at: string | null;
+  product_id?: string | null;
 };
 
 type ProfileData = {
@@ -100,6 +103,45 @@ function subscriptionDetail(row: SubscriptionRow | null): string {
     year: "numeric",
   }).format(expiresAt);
   return `${plan} · ${status} · Renews ${date}`;
+}
+
+function activePlanId(row: SubscriptionRow | null): SubscriptionPlanId | null {
+  if (!row || !isPremiumSubscription(row)) {
+    return null;
+  }
+  const plan = row.plan?.toLowerCase() ?? "";
+  return plan === "basic" || plan === "pro" || plan === "unlimited" ? plan : null;
+}
+
+function billingSubscriptionLabel(row: SubscriptionRow | null): "Free" | "Basic" | "Pro" | "Unlimited" {
+  const plan = activePlanId(row);
+  return plan ? (titleCase(plan) as "Basic" | "Pro" | "Unlimited") : "Free";
+}
+
+function billingSubscriptionDetail(row: SubscriptionRow | null): string {
+  const activePlan = activePlanId(row);
+  if (!row || !activePlan) {
+    return "Free plan";
+  }
+
+  const plan = titleCase(activePlan);
+  const status = row.status?.trim() ? titleCase(row.status) : "Unknown";
+  if (!row.expires_at) {
+    return `${plan} - ${status}`;
+  }
+
+  const expiresAt = new Date(row.expires_at);
+  if (Number.isNaN(expiresAt.getTime())) {
+    return `${plan} - ${status}`;
+  }
+
+  const date = new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(expiresAt);
+  const renewalLabel = row.status?.toLowerCase() === "canceled" ? "Access until" : "Renews";
+  return `${plan} - ${status} - ${renewalLabel} ${date}`;
 }
 
 function fallbackDisplayName(email: string): string {
@@ -443,7 +485,7 @@ export default function ProfileScreen() {
           .maybeSingle<ProfileRow>(),
         supabase
           .from("subscriptions")
-          .select("plan,status,expires_at")
+          .select("plan,status,expires_at,product_id")
           .eq("user_id", user.id)
           .order("expires_at", { ascending: false })
           .limit(1),
@@ -519,9 +561,13 @@ export default function ProfileScreen() {
     });
   }, []);
 
-  const planLabel = subscriptionLabel(profileData?.subscription ?? null);
-  const isPremium = planLabel === "Premium";
-  const usageLimitLabel = isPremium ? "Unlimited" : FREE_AI_GENERATIONS_PER_MONTH.toString();
+  const activePlan = activePlanId(profileData?.subscription ?? null);
+  const planLabel = billingSubscriptionLabel(profileData?.subscription ?? null);
+  const isPremium = Boolean(activePlan);
+  const usageLimit = activePlan
+    ? SUBSCRIPTION_PLANS.find((plan) => plan.id === activePlan)?.generationLimit
+    : FREE_AI_GENERATIONS_PER_MONTH;
+  const usageLimitLabel = String(usageLimit ?? FREE_AI_GENERATIONS_PER_MONTH);
 
   const openUpgrade = useCallback(() => {
     router.push("/upgrade");
@@ -646,7 +692,7 @@ export default function ProfileScreen() {
               <View style={styles.planRow}>
                 <View style={styles.planLeft}>
                   <Text style={styles.cardTitle}>{planLabel}</Text>
-                  <Text style={styles.muted}>{subscriptionDetail(profileData?.subscription ?? null)}</Text>
+                  <Text style={styles.muted}>{billingSubscriptionDetail(profileData?.subscription ?? null)}</Text>
                 </View>
                 <View
                   style={[
@@ -685,7 +731,7 @@ export default function ProfileScreen() {
                   <Ionicons name="infinite" size={18} color={theme.colors.sky} />
                 </View>
                 <Text style={styles.statValue}>{usageLimitLabel}</Text>
-                <Text style={styles.statLabel}>{isPremium ? "Premium generation access" : "Free monthly limit"}</Text>
+                <Text style={styles.statLabel}>{isPremium ? `${planLabel} monthly limit` : "Free monthly limit"}</Text>
               </View>
             </View>
 

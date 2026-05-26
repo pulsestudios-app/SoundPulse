@@ -3,9 +3,9 @@ export type SubscriptionPlanId = "basic" | "pro" | "unlimited";
 export type SubscriptionPlan = {
   id: SubscriptionPlanId;
   name: string;
-  priceLabel: string;
   badge: "Most Popular" | "Best Value" | null;
   glow: boolean;
+  generationLimit: number;
   features: string[];
 };
 
@@ -13,9 +13,9 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
   {
     id: "basic",
     name: "Basic",
-    priceLabel: "$9.99/mo",
     badge: null,
     glow: false,
+    generationLimit: 10,
     features: [
       "10 AI generations/month",
       "4 layer mixer layers",
@@ -26,11 +26,11 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
   {
     id: "pro",
     name: "Pro",
-    priceLabel: "$14.99/mo",
     badge: "Most Popular",
     glow: true,
+    generationLimit: 30,
     features: [
-      "20 AI generations/month",
+      "30 AI generations/month",
       "Unlimited layers",
       "Everything in Basic",
       "Save community sounds",
@@ -39,11 +39,11 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
   {
     id: "unlimited",
     name: "Unlimited",
-    priceLabel: "$19.99/mo",
     badge: "Best Value",
     glow: true,
+    generationLimit: 50,
     features: [
-      "40 AI generations/month",
+      "50 AI generations/month",
       "Everything in Pro",
       "Priority generation",
     ],

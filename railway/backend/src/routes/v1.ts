@@ -7,6 +7,7 @@ import { authRouter } from "./auth.js";
 import { billingRouter } from "./billing.js";
 import { communityRouter } from "./community.js";
 import { soundsRouter } from "./sounds.js";
+import { subscriptionsRouter } from "./subscriptions.js";
 
 export const v1Router = express.Router();
 
@@ -22,6 +23,7 @@ v1Router.use("/auth", authRouter);
 v1Router.use("/billing", billingRouter);
 v1Router.use("/community", communityRouter);
 v1Router.use("/sounds", soundsRouter);
+v1Router.use("/subscriptions", subscriptionsRouter);
 
 v1Router.delete("/account", authenticateUser, accountDeleteRateLimit, async (req: Request, res: Response) => {
   try {

@@ -2,6 +2,7 @@ import { supabaseAdmin } from "../lib/supabaseAdmin.js";
 
 export type PlanTier =
   | "free"
+  | "basic"
   | "student"
   | "semester"
   | "pro"
@@ -12,6 +13,7 @@ export type PlanTier =
 
 const ALLOWED: PlanTier[] = [
   "free",
+  "basic",
   "student",
   "semester",
   "pro",
@@ -94,6 +96,8 @@ export async function claudeModelForPlanWithUsage(planTier: PlanTier, userId?: s
 export function claudeModelForPlan(planTier: PlanTier): string {
   switch (planTier) {
     case "free":
+      return "claude-haiku-4-5-20251001";
+    case "basic":
     case "student":
     case "semester":
       return "claude-haiku-4-5-20251001";
@@ -112,6 +116,7 @@ export function claudeModelForPlan(planTier: PlanTier): string {
 const FREE_TRANSCRIBE_MAX_SECONDS = 15 * 60;
 const PLAN_LIMIT_MINUTES: Record<PlanTier, number> = {
   free: 15,
+  basic: 100,
   student: 250,
   semester: 250,
   pro: 400,

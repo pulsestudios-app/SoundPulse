@@ -20,8 +20,8 @@ export class GenerationLimitError extends Error {
 const GENERATION_LIMITS: Record<GenerationPlanBucket, number> = {
   free: 0,
   basic: 10,
-  pro: 20,
-  unlimited: 40,
+  pro: 30,
+  unlimited: 50,
 };
 
 export function resolveGenerationPlanBucket(planRaw: string | null | undefined): GenerationPlanBucket {
@@ -45,20 +45,9 @@ export function resolveGenerationPlanBucket(planRaw: string | null | undefined):
 }
 
 async function getUserPlan(userId: string): Promise<string> {
-  const { data: profile } = await supabaseAdmin
-    .from("profiles")
-    .select("plan")
-    .eq("id", userId)
-    .maybeSingle();
-
-  const profilePlan = typeof profile?.plan === "string" ? profile.plan.trim() : "";
-  if (profilePlan && profilePlan.toLowerCase() !== "free") {
-    return profilePlan;
-  }
-
   const { data: subscriptions } = await supabaseAdmin
     .from("subscriptions")
-    .select("plan, status")
+    .select("plan, status, expires_at")
     .eq("user_id", userId)
     .order("expires_at", { ascending: false })
     .limit(1);
@@ -66,7 +55,14 @@ async function getUserPlan(userId: string): Promise<string> {
   const subscription = subscriptions?.[0];
   const subPlan = typeof subscription?.plan === "string" ? subscription.plan.trim() : "";
   const status = typeof subscription?.status === "string" ? subscription.status.trim().toLowerCase() : "";
-  if (subPlan && status === "active") {
+  const expiresAt =
+    typeof subscription?.expires_at === "string" ? new Date(subscription.expires_at) : null;
+  const stillEntitled = !expiresAt || expiresAt.getTime() > Date.now();
+  if (
+    subPlan &&
+    stillEntitled &&
+    ["active", "trialing", "in_grace_period", "canceled"].includes(status)
+  ) {
     return subPlan;
   }
 

@@ -6,6 +6,7 @@ import * as Linking from "expo-linking";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo } from "react";
+import { Platform } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { seedNewUserProfile } from "@/src/features/auth/signupProfile";
@@ -164,11 +165,21 @@ function useProtectedNavigation() {
 
 function RootLayoutInner() {
   const { navigationTheme } = useProtectedNavigation();
+  const { session } = useAuthSession();
 
   useEffect(() => {
     void initAnalytics().catch(() => undefined);
     void trackEvent("app_opened");
   }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== "android" || !session?.user || needsEmailVerification(session.user)) {
+      return;
+    }
+    void import("@/src/features/subscriptions/billingService")
+      .then(({ restorePurchases }) => restorePurchases())
+      .catch(() => undefined);
+  }, [session?.user]);
 
   return (
     <ThemeProvider value={navigationTheme}>
@@ -178,7 +189,6 @@ function RootLayoutInner() {
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="upgrade" />
-        <Stack.Screen name="breathing" />
         <Stack.Screen name="stories" />
         <Stack.Screen name="blocked-users" />
         <Stack.Screen name="creator/[userId]" />
