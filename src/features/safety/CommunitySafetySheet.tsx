@@ -24,12 +24,13 @@ const REPORT_REASONS = [
   "Other",
 ] as const;
 
-type SafetyMode = "actions" | "report" | "block";
+type SafetyMode = "actions" | "report" | "block" | "unshare";
 
 export type CommunitySafetyTarget = {
   soundId: string;
   userId: string;
   creatorName: string;
+  isOwner?: boolean;
 };
 
 type CommunitySafetySheetProps = {
@@ -37,6 +38,7 @@ type CommunitySafetySheetProps = {
   onClose: () => void;
   onReportSubmitted?: (soundId: string) => void;
   onUserBlocked?: (userId: string) => void;
+  onUnshareRequested?: (soundId: string) => Promise<void>;
 };
 
 export function CommunitySafetySheet({
@@ -44,6 +46,7 @@ export function CommunitySafetySheet({
   onClose,
   onReportSubmitted,
   onUserBlocked,
+  onUnshareRequested,
 }: CommunitySafetySheetProps) {
   const theme = useAppTheme();
   const [mode, setMode] = useState<SafetyMode>("actions");
@@ -52,11 +55,12 @@ export function CommunitySafetySheet({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [blocking, setBlocking] = useState(false);
+  const [unsharing, setUnsharing] = useState(false);
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const toastOpacity = useRef(new Animated.Value(0)).current;
 
-  const busy = submitting || blocking;
+  const busy = submitting || blocking || unsharing;
   const targetDisplayName = target
     ? formatUserDisplay(target.userId, target.creatorName)
     : "this user";
@@ -175,6 +179,7 @@ export function CommunitySafetySheet({
     setErrorMessage(null);
     setSubmitting(false);
     setBlocking(false);
+    setUnsharing(false);
   }, [target]);
 
   const submitReport = useCallback(async () => {
@@ -213,27 +218,58 @@ export function CommunitySafetySheet({
     }
   }, [onClose, onUserBlocked, showToast, target]);
 
+  const confirmUnshare = useCallback(async () => {
+    if (!target || !onUnshareRequested) {
+      return;
+    }
+    setUnsharing(true);
+    setErrorMessage(null);
+    try {
+      await onUnshareRequested(target.soundId);
+      onClose();
+      showToast("Removed from community");
+    } catch (e) {
+      setErrorMessage(e instanceof Error ? e.message : "Could not remove this sound from the community.");
+    } finally {
+      setUnsharing(false);
+    }
+  }, [onClose, onUnshareRequested, showToast, target]);
+
   const renderActions = () => (
     <>
       <Text style={styles.title}>Sound options</Text>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Report this sound"
-        onPress={() => setMode("report")}
-        style={styles.actionRow}
-      >
-        <Ionicons name="flag-outline" size={20} color={theme.colors.coral} />
-        <Text style={styles.actionText}>Report this sound</Text>
-      </Pressable>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Block this user"
-        onPress={() => setMode("block")}
-        style={styles.actionRow}
-      >
-        <Ionicons name="ban-outline" size={20} color={theme.colors.sky} />
-        <Text style={styles.actionText}>Block {targetDisplayName}</Text>
-      </Pressable>
+      {target?.isOwner ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Unshare from community"
+          onPress={() => setMode("unshare")}
+          style={styles.actionRow}
+        >
+          <Ionicons name="remove-circle-outline" size={20} color={theme.colors.sky} />
+          <Text style={styles.actionText}>Unshare from community</Text>
+        </Pressable>
+      ) : (
+        <>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Report this sound"
+            onPress={() => setMode("report")}
+            style={styles.actionRow}
+          >
+            <Ionicons name="flag-outline" size={20} color={theme.colors.coral} />
+            <Text style={styles.actionText}>Report this sound</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Block this user"
+            onPress={() => setMode("block")}
+            style={styles.actionRow}
+          >
+            <Ionicons name="ban-outline" size={20} color={theme.colors.sky} />
+            <Text style={styles.actionText}>Block {targetDisplayName}</Text>
+          </Pressable>
+        </>
+      )}
       <Button label="Cancel" variant="secondary" onPress={close} />
     </>
   );
@@ -325,6 +361,31 @@ export function CommunitySafetySheet({
     </>
   );
 
+  const renderUnshare = () => (
+    <>
+      <Text style={styles.title}>Remove this sound from the community?</Text>
+      <Text style={styles.hint}>
+        Others won't be able to see it anymore. You'll still have it in your library.
+      </Text>
+      {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
+      <View style={styles.buttonRow}>
+        <Button
+          label={unsharing ? "Removing..." : "Confirm"}
+          onPress={() => void confirmUnshare()}
+          disabled={unsharing || !onUnshareRequested}
+          style={{ flex: 1 }}
+        />
+        <Button
+          label="Cancel"
+          variant="secondary"
+          onPress={close}
+          disabled={unsharing}
+          style={{ flex: 1 }}
+        />
+      </View>
+    </>
+  );
+
   return (
     <>
       <Modal visible={target !== null} transparent animationType="fade" onRequestClose={close}>
@@ -333,6 +394,7 @@ export function CommunitySafetySheet({
             {mode === "actions" ? renderActions() : null}
             {mode === "report" ? renderReport() : null}
             {mode === "block" ? renderBlock() : null}
+            {mode === "unshare" ? renderUnshare() : null}
             {busy ? <ActivityIndicator color={theme.colors.primary} /> : null}
           </Pressable>
         </Pressable>
