@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -12,6 +12,7 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   View,
 } from "react-native";
@@ -28,6 +29,7 @@ import { submitFeedback, type FeedbackType } from "@/src/features/feedback/feedb
 import { FREE_AI_GENERATIONS_PER_MONTH } from "@/src/features/generate/entitlementsStore";
 import { updateProfileDisplayName } from "@/src/features/profile/profileApi";
 import { useScrollContentBottomPad } from "@/src/hooks/useScrollBottomInset";
+import { getAnalyticsOptOut, setAnalyticsOptOut, syncAnalyticsUserProperties, trackEvent } from "@/src/lib/analytics";
 import { supabase } from "@/src/lib/supabase";
 import { useAppTheme } from "@/src/theme";
 
@@ -132,6 +134,7 @@ export default function ProfileScreen() {
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  const [analyticsOptedOut, setAnalyticsOptedOut] = useState(false);
   const toastOpacity = useRef(new Animated.Value(0)).current;
 
   const styles = useMemo(
@@ -403,12 +406,17 @@ export default function ProfileScreen() {
       setFeedbackVisible(false);
       setFeedbackMessage("");
       showToast("Thanks — we received your feedback");
+      void trackEvent("feedback_submitted", { type: feedbackType });
     } catch (e) {
       setErrorMessage(e instanceof Error ? e.message : "Could not send feedback.");
     } finally {
       setSubmittingFeedback(false);
     }
   }, [feedbackMessage, feedbackType, session?.user?.id, showToast]);
+
+  useEffect(() => {
+    void getAnalyticsOptOut().then(setAnalyticsOptedOut).catch(() => undefined);
+  }, []);
 
   const loadProfile = useCallback(
     async ({ initial }: { initial: boolean }) => {
@@ -456,6 +464,15 @@ export default function ProfileScreen() {
       const email = profile?.email?.trim() || user.email?.trim() || "Not signed in";
       const displayName = profile?.display_name?.trim() || fallbackDisplayName(email);
       const subscription = ((subscriptionResult.data ?? [])[0] as SubscriptionRow | undefined) ?? null;
+      const planTier = (subscription?.plan ?? "free").trim() || "free";
+      const trialActive = (subscription?.status ?? "").trim().toLowerCase() === "trialing";
+      const createdAtIso = (user as unknown as { created_at?: string | null })?.created_at ?? null;
+      void syncAnalyticsUserProperties({
+        userId: user.id,
+        planTier,
+        trialActive,
+        createdAtIso,
+      });
 
       setProfileData({
         displayName,
@@ -491,6 +508,7 @@ export default function ProfileScreen() {
       setErrorMessage(error.message);
       return;
     }
+    void trackEvent("signed_out");
     router.replace("/(auth)/sign-in");
   }, [router]);
 
@@ -685,6 +703,33 @@ export default function ProfileScreen() {
                   onPress={() => void handleSignOut()}
                 />
                 <Button label="Send Feedback" variant="secondary" onPress={openFeedbackModal} />
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    paddingVertical: 8,
+                  }}
+                >
+                  <View style={{ flex: 1, paddingRight: 12 }}>
+                    <Text style={{ ...theme.typography.body, color: theme.colors.textPrimary, fontWeight: "700" }}>
+                      Analytics
+                    </Text>
+                    <Text style={{ ...theme.typography.caption, color: theme.colors.textSecondary, lineHeight: 18 }}>
+                      Help improve SoundPulse by sending non-personal usage events.
+                    </Text>
+                  </View>
+                  <Switch
+                    value={!analyticsOptedOut}
+                    onValueChange={(enabled) => {
+                      const nextOptOut = !enabled;
+                      setAnalyticsOptedOut(nextOptOut);
+                      void setAnalyticsOptOut(nextOptOut);
+                    }}
+                    trackColor={{ false: theme.colors.border, true: `${theme.colors.primary}66` }}
+                    thumbColor={Platform.OS === "android" ? theme.colors.surface : undefined}
+                  />
+                </View>
               </View>
             </Card>
 

@@ -1,4 +1,5 @@
 import { ensureBackendUrl, backendJsonHeaders } from "@/src/lib/backend";
+import { sanitizedErrorReason, trackEvent } from "@/src/lib/analytics";
 import { supabase } from "@/src/lib/supabase";
 
 export type GenerateSoundscapeResult = {
@@ -72,6 +73,10 @@ export async function generateSoundscape(
           ? "RATE_LIMIT_EXCEEDED"
           : undefined;
     const message = code ? messageForGenerationError(code) : text || `Request failed (${res.status})`;
+    void trackEvent("sound_generation_failed", {
+      error_reason: sanitizedErrorReason(code ?? message),
+      prompt_length: prompt.trim().length,
+    });
     throw new GenerateSoundscapeError(message, res.status, code);
   }
 
@@ -81,5 +86,6 @@ export async function generateSoundscape(
     throw new GenerateSoundscapeError("Server did not return an audio URL.", 502);
   }
 
+  void trackEvent("sound_generated", { prompt_length: prompt.trim().length });
   return { url, duration };
 }

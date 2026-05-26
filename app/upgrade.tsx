@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Pressable,
@@ -15,6 +15,7 @@ import { Button } from "@/src/components/core/Button";
 import { Screen } from "@/src/components/core/Screen";
 import { SUBSCRIPTION_PLANS, type SubscriptionPlanId } from "@/src/features/subscription/plans";
 import { useScrollContentBottomPad } from "@/src/hooks/useScrollBottomInset";
+import { trackEvent } from "@/src/lib/analytics";
 import { useAppTheme } from "@/src/theme";
 
 export default function UpgradeScreen() {
@@ -25,11 +26,16 @@ export default function UpgradeScreen() {
 
   const onSubscribe = useCallback((planId: SubscriptionPlanId, planName: string) => {
     setSubscribingPlan(planId);
+    void trackEvent("upgrade_button_tapped", { plan: planId });
     Alert.alert(
       "Coming soon",
       `${planName} subscriptions will be available in the next app update.`,
       [{ text: "OK", onPress: () => setSubscribingPlan(null) }]
     );
+  }, []);
+
+  useEffect(() => {
+    void trackEvent("upgrade_screen_viewed");
   }, []);
 
   const styles = useMemo(

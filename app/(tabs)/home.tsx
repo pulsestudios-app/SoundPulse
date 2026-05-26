@@ -42,6 +42,7 @@ import type { SavedLayerSnapshot } from "@/src/features/mixer/layerPresets";
 import { setPendingMixLoad } from "@/src/features/mixer/pendingMixLoad";
 import { useIsPremium } from "@/src/features/subscription/useIsPremium";
 import { useScrollContentBottomPad } from "@/src/hooks/useScrollBottomInset";
+import { trackEvent } from "@/src/lib/analytics";
 import { useAppTheme } from "@/src/theme";
 
 function communityPlaybackId(soundId: string): string {
@@ -162,6 +163,7 @@ export default function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       setLoadingInitial(true);
+      void trackEvent("discover_opened");
       void loadDiscover(selectedCategory, true)
         .catch((e) => {
           setErrorMessage(e instanceof Error ? e.message : "Could not load community sounds.");
@@ -239,6 +241,7 @@ export default function HomeScreen() {
         setErrorMessage("This mix could not be loaded.");
         return;
       }
+      void trackEvent("mix_remixed");
       void layerMixerEngine.stopMix();
       setPlayingSoundId(null);
       setPendingMixLoad(layers);
@@ -259,6 +262,10 @@ export default function HomeScreen() {
         try {
           const playing = await toggleCommunityMixPlayback(sound.id, layers, playingSoundId);
           setPlayingSoundId(playing ? sound.id : null);
+          if (playing) {
+            void trackEvent("mix_played");
+            void trackEvent("community_sound_played");
+          }
         } catch (e) {
           setErrorMessage(e instanceof Error ? e.message : "Mix playback failed.");
           setPlayingSoundId(null);
@@ -281,6 +288,10 @@ export default function HomeScreen() {
           setPlayingSoundId(null);
         });
         setPlayingSoundId(playing ? sound.id : null);
+        if (playing) {
+          void trackEvent("sound_played");
+          void trackEvent("community_sound_played");
+        }
       } catch (e) {
         setErrorMessage(e instanceof Error ? e.message : "Playback failed.");
       } finally {

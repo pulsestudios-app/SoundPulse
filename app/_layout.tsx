@@ -13,6 +13,7 @@ import { needsEmailVerification } from "@/src/features/auth/emailVerification";
 import { useAuthSession } from "@/src/features/auth/useAuthSession";
 import { createSessionFromOAuthUrl, isOAuthCallbackUrl } from "@/src/features/auth/oauth";
 import { isAuthSignInDeepLink, soundpulseLinking } from "@/src/lib/appLinking";
+import { initAnalytics, trackEvent } from "@/src/lib/analytics";
 import { ThemePreferenceProvider, useThemePreference } from "@/src/theme";
 
 /** Deep link map: soundpulse://auth/sign-in → /(auth)/sign-in (used with app/+native-intent.tsx). */
@@ -163,6 +164,11 @@ function useProtectedNavigation() {
 
 function RootLayoutInner() {
   const { navigationTheme } = useProtectedNavigation();
+
+  useEffect(() => {
+    void initAnalytics().catch(() => undefined);
+    void trackEvent("app_opened");
+  }, []);
 
   return (
     <ThemeProvider value={navigationTheme}>

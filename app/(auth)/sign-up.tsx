@@ -9,6 +9,7 @@ import { seedNewUserProfile } from "@/src/features/auth/signupProfile";
 import { Button } from "@/src/components/core/Button";
 import { Input } from "@/src/components/core/Input";
 import { Screen } from "@/src/components/core/Screen";
+import { trackEvent } from "@/src/lib/analytics";
 import { useAppTheme } from "@/src/theme";
 
 export default function SignUpScreen() {
@@ -93,7 +94,10 @@ export default function SignUpScreen() {
     }
     if (error) {
       setErrorMessage(error.message);
+      void trackEvent("signed_up", { method: "google", ok: false });
+      return;
     }
+    void trackEvent("signed_up", { method: "google", ok: true });
   };
 
   const handleSignUp = async () => {
@@ -121,8 +125,11 @@ export default function SignUpScreen() {
 
     if (!result.ok) {
       setErrorMessage(result.error ?? "Sign-up failed. Please try again.");
+      void trackEvent("signed_up", { method: "email", ok: false, error_code: result.errorCode ?? null });
       return;
     }
+
+    void trackEvent("signed_up", { method: "email", ok: true });
 
     if (result.userId) {
       try {

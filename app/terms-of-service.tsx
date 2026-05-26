@@ -140,7 +140,10 @@ export default function TermsOfServiceScreen() {
 
       <Text style={s.h2}>15. Contact</Text>
       <Text style={s.p}>
-        Questions about these Terms: <Text style={s.link}>legal@pulsestudios.app</Text>
+        Questions about billing or your account: <Text style={s.link}>support@pulsestudios.app</Text>
+      </Text>
+      <Text style={s.p}>
+        Legal or terms questions: <Text style={s.link}>legal@pulsestudios.app</Text>
       </Text>
       <View style={{ height: 8 }} />
     </LegalScreenLayout>

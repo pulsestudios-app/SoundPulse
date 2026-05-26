@@ -42,6 +42,7 @@ import { useIsPremium } from "@/src/features/subscription/useIsPremium";
 import { useScrollContentBottomPad } from "@/src/hooks/useScrollBottomInset";
 import { supabase } from "@/src/lib/supabase";
 import { useAppTheme } from "@/src/theme";
+import { trackEvent } from "@/src/lib/analytics";
 
 type GenerateMode = "ai" | "mixer";
 
@@ -304,6 +305,9 @@ export default function GenerateScreen() {
     if (!aiResult?.url) return;
     const playing = await aiPreviewPlayer.toggle(aiResult.url);
     setAiPlaying(playing);
+    if (playing) {
+      void trackEvent("sound_played");
+    }
   }, [aiResult?.url]);
 
   const saveAiResult = useCallback(async () => {
@@ -313,6 +317,7 @@ export default function GenerateScreen() {
       await saveGeneratedSound(aiResult, userId);
       setAiSaved(true);
       showToast("Sound saved to library");
+      void trackEvent("sound_saved");
     } catch (e) {
       setAiError(e instanceof Error ? e.message : "Could not save sound.");
     }
@@ -332,6 +337,9 @@ export default function GenerateScreen() {
     try {
       await layerMixerEngine.playMix(layerStatesForEngineCallback());
       setMixPlaying(layerMixerEngine.isPlaying());
+      if (layerMixerEngine.isPlaying()) {
+        void trackEvent("mix_played");
+      }
     } catch (e) {
       console.error("[Generate] Mixer play failed:", e);
       setMixPlaying(false);
@@ -347,6 +355,7 @@ export default function GenerateScreen() {
       next[idx] = row;
       const preset = LAYER_PRESETS[idx];
       if (preset) {
+        void trackEvent(enabled ? "layer_added" : "layer_removed", { layer_name: preset.key });
         void layerMixerEngine.applyLayerChange({
           key: preset.key,
           volume: row.volume,
@@ -415,6 +424,8 @@ export default function GenerateScreen() {
         name: trimmedName,
         layers: snapshots,
       });
+
+      void trackEvent("mix_saved");
 
       if (shareMixToCommunityToggle) {
         await shareMixToCommunity({

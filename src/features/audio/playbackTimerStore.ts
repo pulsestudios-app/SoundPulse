@@ -5,6 +5,7 @@ import {
   restoreAllPlaybackVolume,
   stopAllPlayback,
 } from "./playbackRegistry";
+import { trackEvent } from "@/src/lib/analytics";
 
 export const FADE_OUT_MS = 30_000;
 
@@ -57,6 +58,7 @@ export const usePlaybackTimerStore = create<PlaybackTimerState>((set, get) => ({
 
   startTimer: (minutes: number) => {
     const safeMinutes = Math.min(24 * 60, Math.max(1, Math.floor(minutes)));
+    void trackEvent("sleep_timer_started", { duration_minutes: safeMinutes });
     const endsAtMs = Date.now() + safeMinutes * 60 * 1000;
     fadeAbort = false;
     clearTickInterval();

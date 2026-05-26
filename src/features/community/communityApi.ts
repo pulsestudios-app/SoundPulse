@@ -11,6 +11,7 @@ import {
   shareMixToCommunityViaBackend,
 } from "./communityBackendApi";
 import type { CommunityCategoryKey } from "./categories";
+import { trackEvent } from "@/src/lib/analytics";
 import type {
   CommunitySound,
   CommunitySoundRow,
@@ -253,6 +254,7 @@ export async function shareMixToCommunity(input: {
     savedMixId: input.savedMixId,
     tags: input.tags,
   });
+  void trackEvent("mix_shared");
 }
 
 export async function removeCommunitySoundFromDiscover(userId: string, soundId: string): Promise<void> {
@@ -294,14 +296,19 @@ export async function shareSoundToCommunity(input: ShareCommunitySoundInput): Pr
     duration: input.duration,
     tags: input.tags,
   });
+  void trackEvent("sound_shared");
 }
 
 export async function toggleCommunityPulse(_userId: string, sound: CommunitySound): Promise<boolean> {
-  return pulseCommunitySoundViaBackend(sound.id);
+  const pulsed = await pulseCommunitySoundViaBackend(sound.id);
+  void trackEvent(pulsed ? "sound_pulsed" : "sound_unpulsed");
+  return pulsed;
 }
 
 export async function toggleCommunitySave(_userId: string, sound: CommunitySound): Promise<boolean> {
-  return saveCommunitySoundViaBackend(sound.id);
+  const saved = await saveCommunitySoundViaBackend(sound.id);
+  void trackEvent("sound_saved", { saved });
+  return saved;
 }
 
 export async function reportCommunitySound(
@@ -310,6 +317,7 @@ export async function reportCommunitySound(
   reason: string
 ): Promise<void> {
   await reportCommunitySoundViaBackend(soundId, reason);
+  void trackEvent("report_submitted");
 }
 
 export async function fetchSavedCommunitySounds(userId: string): Promise<CommunitySound[]> {

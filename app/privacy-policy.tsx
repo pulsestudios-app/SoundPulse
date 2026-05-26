@@ -75,6 +75,10 @@ export default function PrivacyPolicyScreen() {
         information according to Google’s policies. We receive limited purchase state information needed to unlock
         features.
       </Text>
+      <Text style={s.bullet}>
+        • PostHog: processes product analytics events when analytics are enabled. Autocapture is disabled, and we only
+        send specific non-PII events needed to understand feature usage and reliability.
+      </Text>
       <Text style={s.p}>
         These providers may process data in the United States or other regions where they operate. Their use of
         information is governed by their respective privacy policies and our agreements with them.

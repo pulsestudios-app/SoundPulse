@@ -39,6 +39,8 @@ module.exports = {
       backendUrl: process.env.EXPO_PUBLIC_BACKEND_URL,
       appSecretKey: process.env.EXPO_PUBLIC_APP_KEY,
       sentryDsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
+      posthogKey: process.env.EXPO_PUBLIC_POSTHOG_KEY,
+      posthogHost: process.env.EXPO_PUBLIC_POSTHOG_HOST,
       eas: {
         projectId: "1ca89701-a6a7-4b1b-97cb-51311f7ed9b9",
       },
