@@ -28,7 +28,7 @@ module.exports = {
     android: {
       ...appJson.expo.android,
       package: "com.soundpulseapp.android",
-      versionCode: 1,
+      versionCode: 2,
       permissions: [
         "INTERNET",
         "com.android.vending.BILLING",
